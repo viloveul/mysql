@@ -1,0 +1,30 @@
+{
+    "name": "viloveul/mysql",
+    "description": "MySql Manager",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["zafex", "viloveul", "fajrulaz", "mysql", "database", "component", "library"],
+    "homepage": "http://www.viloveul.com",
+    "readme": "README.MD",
+    "authors": [{
+        "name": "Fajrul Akbar Zuhdi",
+        "email": "fajrulaz@gmail.com"
+    }],
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true
+    },
+    "require": {
+        "php": "~7.0"
+    },
+    "require-dev": {
+        "viloveul/support": "v1.*|v1.x-dev",
+        "viloveul/database": "v1.*|v1.x-dev"
+    },
+    "autoload": {
+        "psr-4": {
+            "Viloveul\\MySql\\": "src/"
+        }
+    }
+}

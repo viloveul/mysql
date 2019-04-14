@@ -54,9 +54,9 @@ class Connection implements IConnection
     /**
      * @param IModel $model
      */
-    public function newQuery(IModel $model): IQueryBuilder
+    public function newQuery(): IQueryBuilder
     {
-        return new QueryBuilder($this, $model);
+        return new QueryBuilder($this);
     }
 
     /**

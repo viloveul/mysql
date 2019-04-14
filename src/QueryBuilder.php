@@ -69,22 +69,27 @@ class QueryBuilder implements IQueryBuilder
 
     /**
      * @param IConnection $connection
-     * @param IModel      $model
      */
-    public function __construct(IConnection $connection, IModel $model)
+    public function __construct(IConnection $connection)
     {
         $this->connection = $connection;
-        $this->model = $model;
-        $this->table = $model->table();
     }
 
     public function count(): int
     {
-        $q = "SELECT COUNT(*) FROM {$this->table} AS t";
+        $q = "SELECT COUNT(*) FROM {$this->getModel()->table()} AS t";
         if ($where = $this->buildWhereCondition()) {
             $q .= " WHERE {$where}";
         }
         return $this->connection->runCommand($q, $this->bindParams)->fetchColumn();
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getModel(): IModel
+    {
+        return $this->model;
     }
 
     /**
@@ -97,7 +102,7 @@ class QueryBuilder implements IQueryBuilder
 
     public function getQuery(): string
     {
-        $q = 'SELECT ' . $this->buildSelectedColumn() . ' FROM ' . $this->table . ' AS t';
+        $q = 'SELECT ' . $this->buildSelectedColumn() . ' FROM ' . $this->getModel()->table() . ' AS t';
         if ($where = $this->buildWhereCondition()) {
             $q .= " WHERE {$where}";
         }
@@ -114,7 +119,7 @@ class QueryBuilder implements IQueryBuilder
     public function getResult()
     {
         $result = $this->connection->runCommand($this->getQuery(), $this->getParams())->fetch(PDO::FETCH_ASSOC);
-        $model = clone $this->model;
+        $model = clone $this->getModel();
         $model->setAttributes($result);
         return $model;
     }
@@ -126,7 +131,7 @@ class QueryBuilder implements IQueryBuilder
     {
         $results = $this->connection->runCommand($this->getQuery(), $this->getParams())->fetchAll(PDO::FETCH_ASSOC);
         $maps = array_map(function ($result) {
-            $model = clone $this->model;
+            $model = clone $this->getModel();
             $model->setAttributes($result);
             return $model;
         }, $results);
@@ -158,7 +163,7 @@ class QueryBuilder implements IQueryBuilder
      */
     public function max(string $column): int
     {
-        $q = "SELECT MAX(`{$column}`) FROM {$this->table} AS t";
+        $q = "SELECT MAX(`{$column}`) FROM {$this->getModel()->table()} AS t";
         if ($where = $this->buildWhereCondition()) {
             $q .= " WHERE {$where}";
         }
@@ -170,7 +175,7 @@ class QueryBuilder implements IQueryBuilder
      */
     public function min(string $column): int
     {
-        $q = "SELECT MIN(`{$column}`) FROM {$this->table} AS t";
+        $q = "SELECT MIN(`{$column}`) FROM {$this->getModel()->table()} AS t";
         if ($where = $this->buildWhereCondition()) {
             $q .= " WHERE {$where}";
         }
@@ -225,6 +230,14 @@ class QueryBuilder implements IQueryBuilder
             $this->selectedColumns[] = $col;
         }
         return $this;
+    }
+
+    /**
+     * @param IModel $model
+     */
+    public function setModel(IModel $model): void
+    {
+        $this->model = $model;
     }
 
     /**

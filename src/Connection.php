@@ -64,10 +64,11 @@ class Connection implements IConnection
      * @param  array   $params
      * @return mixed
      */
-    public function runCommand(string $query, array $params)
+    public function runCommand(string $query, array $params = [])
     {
         try {
-            $query = $this->pdo->prepare($this->compile($query));
+            $compiled = $this->compile($query);
+            $query = $this->pdo->prepare($compiled);
             $query->execute($params);
             return $query;
         } catch (PDOException $e) {

@@ -55,7 +55,7 @@ class QueryBuilder implements IQueryBuilder
     /**
      * @var mixed
      */
-    protected $size = 10;
+    protected $size = 0;
 
     /**
      * @var mixed
@@ -109,7 +109,9 @@ class QueryBuilder implements IQueryBuilder
         if ($where = $this->buildWhereCondition()) {
             $q .= " WHERE {$where}";
         }
-        $q .= ' LIMIT ' . $this->size . ' OFFSET ' . $this->offset;
+        if ($this->size > 0) {
+            $q .= ' LIMIT ' . $this->size . ' OFFSET ' . abs($this->offset);
+        }
         if ($order = $this->buildOrderBy()) {
             $q .= ' ORDER BY ' . $order;
         }
@@ -121,7 +123,11 @@ class QueryBuilder implements IQueryBuilder
      */
     public function getResult()
     {
-        $result = $this->connection->runCommand($this->getQuery(false), $this->getParams())->fetch(PDO::FETCH_ASSOC);
+        if ($this->size > 1) {
+            $this->limit(1, 0);
+        }
+        $query = $this->connection->runCommand($this->getQuery(false), $this->getParams());
+        $result = $query->fetch(PDO::FETCH_ASSOC);
         $model = clone $this->getModel();
         $model->setAttributes($result);
         return $model;
@@ -132,10 +138,40 @@ class QueryBuilder implements IQueryBuilder
      */
     public function getResults(): ICollection
     {
-        $results = $this->connection->runCommand($this->getQuery(false), $this->getParams())->fetchAll(PDO::FETCH_ASSOC);
-        $maps = array_map(function ($result) {
+        $query = $this->connection->runCommand($this->getQuery(false), $this->getParams());
+        $results = $query->fetchAll(PDO::FETCH_ASSOC);
+        $relations = [];
+        if ($this->relations) {
+            foreach ($this->relations as $name => $relation) {
+                [$type, $class, $pk, $fk] = $this->getModel()->relations()[$name];
+                $keys = array_map(function ($result) use ($pk) {
+                    return $result[$pk];
+                }, $results);
+                $model = $class::where($fk, $keys, IQueryBuilder::OPERATOR_IN);
+                is_callable($relation) and $relation($model);
+                $childs = $model->getResults();
+                foreach ($childs as $child) {
+                    $relations[$name]['pk'] = $pk;
+                    $relations[$name]['identifier'] = $child[$fk];
+                    if ($type === IModel::HAS_MANY) {
+                        $relations[$name]['values'][] = $child;
+                    } else {
+                        $relations[$name]['values'] = $child;
+                    }
+                }
+
+            }
+        }
+
+        $maps = array_map(function ($result) use ($relations) {
             $model = clone $this->getModel();
             $model->setAttributes($result);
+            $filter = array_filter($relations, function ($v) use ($result) {
+                return $result[$v['pk']] == $v['identifier'];
+            });
+            $model->setAttributes(array_map(function ($v) {
+                return $v['values'];
+            }, $filter));
             return $model;
         }, $results);
         return new Collection($maps);
@@ -151,14 +187,6 @@ class QueryBuilder implements IQueryBuilder
         $this->size = $size;
         $this->offset = $offset;
         return $this;
-    }
-
-    /**
-     * @param string $name
-     */
-    public function loadRelation(string $name): void
-    {
-
     }
 
     /**
@@ -304,7 +332,7 @@ class QueryBuilder implements IQueryBuilder
             case IQueryBuilder::OPERATOR_IN:
             case IQueryBuilder::OPERATOR_NOT_IN:
             default:
-                $op = $operator === OPERATOR_NOT_IN ? 'NOT IN' : 'IN';
+                $op = $operator === IQueryBuilder::OPERATOR_NOT_IN ? 'NOT IN' : 'IN';
                 $cond = implode(', ', $params);
                 $condition['argument'] = "{$column} {$op} ({$cond})";
                 break;
@@ -331,11 +359,12 @@ class QueryBuilder implements IQueryBuilder
 
     /**
      * @param  string  $name
+     * @param  Closure $callback
      * @return mixed
      */
-    public function with(string $name): IQueryBuilder
+    public function with(string $name, Closure $callback = null): IQueryBuilder
     {
-        $this->relations[] = $name;
+        $this->relations[$name] = $callback === null ? $name : $callback;
         return $this;
     }
 
@@ -356,7 +385,7 @@ class QueryBuilder implements IQueryBuilder
         }
         if (!in_array('*', $this->selectedColumns)) {
             foreach ($this->selectedColumns as $select) {
-                $this->selects[] = $select;
+                $selects[] = $select;
             }
         }
         return implode(', ', array_unique($selects));

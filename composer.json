@@ -16,11 +16,11 @@
         "sort-packages": true
     },
     "require": {
-        "php": "~7.0"
+        "php": "~7.0",
+        "viloveul/database": "v1.*|v1.x-dev"
     },
     "require-dev": {
-        "viloveul/support": "v1.*|v1.x-dev",
-        "viloveul/database": "v1.*|v1.x-dev"
+        "viloveul/support": "v1.*|v1.x-dev"
     },
     "autoload": {
         "psr-4": {

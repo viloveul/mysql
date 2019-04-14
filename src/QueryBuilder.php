@@ -100,7 +100,10 @@ class QueryBuilder implements IQueryBuilder
         return $this->bindParams;
     }
 
-    public function getQuery(): string
+    /**
+     * @param bool $compile
+     */
+    public function getQuery(bool $compile = true): string
     {
         $q = 'SELECT ' . $this->buildSelectedColumn() . ' FROM ' . $this->getModel()->table() . ' AS t';
         if ($where = $this->buildWhereCondition()) {
@@ -110,7 +113,7 @@ class QueryBuilder implements IQueryBuilder
         if ($order = $this->buildOrderBy()) {
             $q .= ' ORDER BY ' . $order;
         }
-        return $this->connection->compile($q);
+        return $compile ? $this->connection->compile($q) : $q;
     }
 
     /**
@@ -118,7 +121,7 @@ class QueryBuilder implements IQueryBuilder
      */
     public function getResult()
     {
-        $result = $this->connection->runCommand($this->getQuery(), $this->getParams())->fetch(PDO::FETCH_ASSOC);
+        $result = $this->connection->runCommand($this->getQuery(false), $this->getParams())->fetch(PDO::FETCH_ASSOC);
         $model = clone $this->getModel();
         $model->setAttributes($result);
         return $model;
@@ -129,7 +132,7 @@ class QueryBuilder implements IQueryBuilder
      */
     public function getResults(): ICollection
     {
-        $results = $this->connection->runCommand($this->getQuery(), $this->getParams())->fetchAll(PDO::FETCH_ASSOC);
+        $results = $this->connection->runCommand($this->getQuery(false), $this->getParams())->fetchAll(PDO::FETCH_ASSOC);
         $maps = array_map(function ($result) {
             $model = clone $this->getModel();
             $model->setAttributes($result);

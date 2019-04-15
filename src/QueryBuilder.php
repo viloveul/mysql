@@ -4,10 +4,13 @@ namespace Viloveul\MySql;
 
 use PDO;
 use Closure;
+use Exception;
 use Viloveul\MySql\Collection;
+use Viloveul\Database\Expression;
 use Viloveul\Database\Contracts\Model as IModel;
 use Viloveul\Database\Contracts\Collection as ICollection;
 use Viloveul\Database\Contracts\Connection as IConnection;
+use Viloveul\Database\Contracts\Expression as IExpression;
 use Viloveul\Database\Contracts\QueryBuilder as IQueryBuilder;
 
 class QueryBuilder implements IQueryBuilder
@@ -21,6 +24,11 @@ class QueryBuilder implements IQueryBuilder
      * @var mixed
      */
     protected $connection;
+
+    /**
+     * @var array
+     */
+    protected $groups = [];
 
     /**
      * @var array
@@ -75,13 +83,38 @@ class QueryBuilder implements IQueryBuilder
         $this->connection = $connection;
     }
 
+    /**
+     * @return mixed
+     */
     public function count(): int
     {
-        $q = "SELECT COUNT(*) FROM {$this->getModel()->table()} AS t";
+        $this->select('count(*)');
+        $query = $this->connection->runCommand($this->getQuery(false), $this->getParams());
+        return $query->fetchColumn();
+    }
+
+    public function delete()
+    {
+        $model = $this->getModel();
+        $attributes = $model->oldAttributes();
+        $primarys = (array) $model->primary();
+        foreach ($primarys as $key) {
+            if (array_key_exists($key, $attributes)) {
+                $this->where($key, $attributes[$key]);
+            }
+        }
+        $alias = $this->connection->prep($model->getAlias());
+        $q = 'DELETE FROM ' . $alias . ' USING ' . $model->table() . ' AS ' . $alias;
         if ($where = $this->buildWhereCondition()) {
             $q .= " WHERE {$where}";
         }
-        return $this->connection->runCommand($q, $this->bindParams)->fetchColumn();
+
+        try {
+            $this->connection->runCommand($q, $this->getParams());
+            return true;
+        } catch (Exception $e) {
+            throw $e;
+        }
     }
 
     /**
@@ -105,15 +138,18 @@ class QueryBuilder implements IQueryBuilder
      */
     public function getQuery(bool $compile = true): string
     {
-        $q = 'SELECT ' . $this->buildSelectedColumn() . ' FROM ' . $this->getModel()->table() . ' AS t';
+        $q = 'SELECT ' . $this->buildSelectedColumn() . ' FROM ' . $this->getModel()->table() . ' AS ' . $this->connection->prep($this->getModel()->getAlias());
         if ($where = $this->buildWhereCondition()) {
             $q .= " WHERE {$where}";
         }
-        if ($this->size > 0) {
-            $q .= ' LIMIT ' . $this->size . ' OFFSET ' . abs($this->offset);
+        if ($groups = $this->buildGroupBy()) {
+            $q .= ' GROUP BY ' . $groups;
         }
         if ($order = $this->buildOrderBy()) {
             $q .= ' ORDER BY ' . $order;
+        }
+        if ($this->size > 0) {
+            $q .= ' LIMIT ' . $this->size . ' OFFSET ' . abs($this->offset);
         }
         return $compile ? $this->connection->compile($q) : $q;
     }
@@ -123,14 +159,15 @@ class QueryBuilder implements IQueryBuilder
      */
     public function getResult()
     {
-        if ($this->size > 1) {
-            $this->limit(1, 0);
-        }
+        $this->limit(1, 0);
         $query = $this->connection->runCommand($this->getQuery(false), $this->getParams());
-        $result = $query->fetch(PDO::FETCH_ASSOC);
-        $model = clone $this->getModel();
-        $model->setAttributes($result);
-        return $model;
+        if ($result = $query->fetch(PDO::FETCH_ASSOC)) {
+            $model = clone $this->getModel();
+            $model->setAttributes($result);
+            return $model;
+        } else {
+            return false;
+        }
     }
 
     /**
@@ -159,22 +196,19 @@ class QueryBuilder implements IQueryBuilder
                         $relations[$name]['values'] = $child;
                     }
                 }
-
             }
         }
+        return new Collection($this->getModel(), $results, $relations);
+    }
 
-        $maps = array_map(function ($result) use ($relations) {
-            $model = clone $this->getModel();
-            $model->setAttributes($result);
-            $filter = array_filter($relations, function ($v) use ($result) {
-                return $result[$v['pk']] == $v['identifier'];
-            });
-            $model->setAttributes(array_map(function ($v) {
-                return $v['values'];
-            }, $filter));
-            return $model;
-        }, $results);
-        return new Collection($maps);
+    /**
+     * @param  string  $column
+     * @return mixed
+     */
+    public function groupBy(string $column): IQueryBuilder
+    {
+        $this->groups[] = $column;
+        return $this;
     }
 
     /**
@@ -192,39 +226,33 @@ class QueryBuilder implements IQueryBuilder
     /**
      * @param string $column
      */
-    public function max(string $column): int
+    public function max(string $column)
     {
-        $q = "SELECT MAX(`{$column}`) FROM {$this->getModel()->table()} AS t";
-        if ($where = $this->buildWhereCondition()) {
-            $q .= " WHERE {$where}";
-        }
-        return $this->connection->runCommand($q, $this->bindParams)->fetchColumn();
+        $this->select("max({$column})");
+        $query = $this->connection->runCommand($this->getQuery(false), $this->getParams());
+        return $query->fetchColumn();
     }
 
     /**
      * @param string $column
      */
-    public function min(string $column): int
+    public function min(string $column)
     {
-        $q = "SELECT MIN(`{$column}`) FROM {$this->getModel()->table()} AS t";
-        if ($where = $this->buildWhereCondition()) {
-            $q .= " WHERE {$where}";
-        }
-        return $this->connection->runCommand($q, $this->bindParams)->fetchColumn();
+        $this->select("min({$column})");
+        $query = $this->connection->runCommand($this->getQuery(false), $this->getParams());
+        return $query->fetchColumn();
     }
 
     /**
      * @param  string   $column
      * @param  $value
      * @param  int      $operator
-     * @param  int      $separator
      * @return mixed
      */
     public function orWhere(
         string $column,
         $value,
-        int $operator = IQueryBuilder::OPERATOR_EQUAL,
-        int $separator = IQueryBuilder::SEPARATOR_AND
+        int $operator = IQueryBuilder::OPERATOR_EQUAL
     ): IQueryBuilder {
         return $this->where($column, $value, $operator, IQueryBuilder::SEPARATOR_OR);
     }
@@ -239,6 +267,25 @@ class QueryBuilder implements IQueryBuilder
     }
 
     /**
+     * @param  string  $relation
+     * @param  Closure $callback
+     * @return mixed
+     */
+    public function orWhereHas(string $relation, Closure $callback): IQueryBuilder
+    {
+        return $this->whereHas($relation, $callback, IQueryBuilder::SEPARATOR_OR);
+    }
+
+    /**
+     * @param  IExpression $expression
+     * @return mixed
+     */
+    public function orWhereRaw(IExpression $expression): IQueryBuilder
+    {
+        return $this->whereRaw($expression, IQueryBuilder::SEPARATOR_OR);
+    }
+
+    /**
      * @param  string  $column
      * @param  int     $sort
      * @return mixed
@@ -246,20 +293,71 @@ class QueryBuilder implements IQueryBuilder
     public function orderBy(string $column, int $sort = IQueryBuilder::ORDER_ASC): IQueryBuilder
     {
         $this->orders[] = [
-            'column' => $column,
+            'column' => $this->normalizeColumn($column),
             'sort' => $sort,
         ];
         return $this;
     }
 
     /**
-     * @param array $columns
+     * @return mixed
      */
-    public function select(array $columns = []): IQueryBuilder
+    public function save()
     {
-        foreach ($columns as $col) {
-            $this->selectedColumns[] = $col;
+        $model = $this->getModel();
+        $attributes = $model->getAttributes();
+        $columns = [];
+        $values = [];
+        foreach ($attributes as $key => $value) {
+            if (!($value instanceof IModel)) {
+                $columns[] = $this->connection->prep($key);
+                $params = $this->makeParams([$value]);
+                $values[] = $params[0];
+            }
         }
+
+        if ($model->isNewRecord()) {
+            $q = 'INSERT INTO ' . $model->table() . ' AS ' . $this->connection->prep($model->getAlias());
+            $q .= '(' . implode(', ', $columns) . ')';
+            $q .= 'VALUES(' . implode(', ', $values) . ')';
+        } else {
+            $primarys = (array) $model->primary();
+            $origins = $model->oldAttributes();
+            foreach ($primarys as $col) {
+                if (array_key_exists($col, $origins)) {
+                    $this->where($col, $origins[$col]);
+                }
+            }
+            $arguments = [];
+            foreach ($columns as $key => $value) {
+                $arguments[] = "{$value} = {$values[$key]}";
+            }
+            $q = 'UPDATE ' . $model->table() . ' AS ' . $this->connection->prep($model->getAlias()) . ' SET ' . implode(', ', $arguments);
+            if ($where = $this->buildWhereCondition()) {
+                $q .= " WHERE {$where}";
+            }
+        }
+
+        try {
+            $this->connection->runCommand($q, $this->getParams());
+            $model->resetState();
+            $model->setAttributes($attributes);
+            return $model;
+        } catch (Exception $e) {
+            throw $e;
+        }
+    }
+
+    /**
+     * @param  string  $column
+     * @param  string  $alias
+     * @return mixed
+     */
+    public function select(string $column, string $alias = null): IQueryBuilder
+    {
+        $column = $this->normalizeColumn($column);
+        $alias = $this->makeColumnAlias($alias ? $alias : $column);
+        $this->selectedColumns[$alias] = $column;
         return $this;
     }
 
@@ -286,7 +384,7 @@ class QueryBuilder implements IQueryBuilder
         $condition = [
             'separator' => $separator,
         ];
-        $column = strpos($column, '.') === false ? "t.{$column}" : $column;
+        $column = $this->normalizeColumn($column);
         $params = $this->makeParams(is_scalar($value) ? [$value] : (array) $value);
         switch ($operator) {
             case IQueryBuilder::OPERATOR_RANGE:
@@ -349,11 +447,58 @@ class QueryBuilder implements IQueryBuilder
     {
         $whereConditions = $this->whereConditions;
         $callback($this);
-        array_push($whereConditions, [
-            'separator' => $separator,
-            'argument' => '(' . $this->buildWhereCondition() . ')',
-        ]);
+        if ($compiled = $this->buildWhereCondition()) {
+            array_push($whereConditions, [
+                'separator' => $separator,
+                'argument' => '(' . $compiled . ')',
+            ]);
+        }
         $this->whereConditions = $whereConditions;
+        return $this;
+    }
+
+    /**
+     * @param  string  $name
+     * @param  Closure $callback
+     * @param  int     $separator
+     * @return mixed
+     */
+    public function whereHas(
+        string $name,
+        Closure $callback,
+        int $separator = IQueryBuilder::SEPARATOR_AND
+    ): IQueryBuilder {
+        [$type, $class, $pk, $fk] = $this->getModel()->relations()[$name];
+        $model = new $class();
+        $model->setAlias($name);
+        $model->whereGroup($callback);
+        $model->select(1);
+        $columns = [
+            $model->connection()->prep($name) . '.' . $model->connection()->prep($fk),
+            $this->connection->prep($this->getModel()->getAlias()) . '.' . $this->connection->prep($pk),
+        ];
+        $model->whereRaw(new Expression(implode('=', $columns)));
+        $this->whereConditions[] = [
+            'separator' => $separator,
+            'argument' => 'EXISTS (' . $model->getQuery(true) . ')',
+        ];
+        $this->bindParams = array_merge($this->getParams(), $model->getParams());
+        return $this;
+    }
+
+    /**
+     * @param  IExpression $expression
+     * @param  int         $separator
+     * @return mixed
+     */
+    public function whereRaw(
+        IExpression $expression,
+        int $separator = IQueryBuilder::SEPARATOR_AND
+    ): IQueryBuilder{
+        $this->whereConditions[] = [
+            'separator' => $separator,
+            'argument' => $expression->getCompiled(),
+        ];
         return $this;
     }
 
@@ -366,6 +511,15 @@ class QueryBuilder implements IQueryBuilder
     {
         $this->relations[$name] = $callback === null ? $name : $callback;
         return $this;
+    }
+
+    protected function buildGroupBy(): string
+    {
+        $groups = [];
+        foreach ($this->groups as $col) {
+            $groups[] = $this->normalizeColumn($col);
+        }
+        return implode(', ', $groups);
     }
 
     protected function buildOrderBy(): string
@@ -384,8 +538,8 @@ class QueryBuilder implements IQueryBuilder
             return '*';
         }
         if (!in_array('*', $this->selectedColumns)) {
-            foreach ($this->selectedColumns as $select) {
-                $selects[] = $select;
+            foreach ($this->selectedColumns as $alias => $select) {
+                $selects[] = ($alias == $select) ? $select : "{$select} AS {$alias}";
             }
         }
         return implode(', ', array_unique($selects));
@@ -407,6 +561,24 @@ class QueryBuilder implements IQueryBuilder
     }
 
     /**
+     * @param  string  $column
+     * @return mixed
+     */
+    protected function makeColumnAlias(string $column): string
+    {
+        if (is_numeric($column)) {
+            return $column;
+        } else {
+            preg_match_all('~\`([a-zA-Z0-9\_]+)\`~mi', $column, $matches);
+            if (array_key_exists(1, $matches) && count($matches[1]) > 0) {
+                return $this->connection->prep(end($matches[1]));
+            } else {
+                return $this->connection->prep(preg_replace('/[^a-zA-Z0-9\_\.]+/', '', $column));
+            }
+        }
+    }
+
+    /**
      * @param  array   $params
      * @return mixed
      */
@@ -414,10 +586,37 @@ class QueryBuilder implements IQueryBuilder
     {
         $binds = [];
         foreach ($params as $value) {
-            $k = count($this->bindParams);
-            $this->bindParams[':bind_' . $k] = $value;
-            $binds[] = ':bind_' . $k;
+            $k = ':bind_' . $this->getModel()->getAlias() . '_' . count($this->bindParams);
+            $this->bindParams[$k] = $value;
+            $binds[] = $k;
         }
         return $binds;
+    }
+
+    /**
+     * @param  string  $column
+     * @return mixed
+     */
+    protected function normalizeColumn(string $column): string
+    {
+        if (is_numeric($column)) {
+            return $column;
+        } elseif (strpos($column, '(') !== false && strpos($column, ')') !== false) {
+            return preg_replace_callback('#(\w+)\(([a-zA-Z0-9\_\.\`\"]+)\)#', function ($match) {
+                $exploded = explode('.', $match[2]);
+                if (count($exploded) === 1) {
+                    array_unshift($exploded, $this->getModel()->getAlias());
+                }
+                $parts = array_map([$this->connection, 'prep'], $exploded);
+                return $match[1] . '(' . implode('.', $parts) . ')';
+            }, $column);
+        } else {
+            $exploded = explode('.', $column);
+            if (count($exploded) === 1) {
+                array_unshift($exploded, $this->getModel()->getAlias());
+            }
+            $parts = array_map([$this->connection, 'prep'], $exploded);
+            return implode('.', $parts);
+        }
     }
 }

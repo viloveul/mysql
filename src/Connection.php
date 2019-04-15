@@ -16,7 +16,7 @@ class Connection implements IConnection
     /**
      * @var mixed
      */
-    protected $pdo;
+    protected $pdo = null;
 
     /**
      * @var mixed
@@ -24,19 +24,32 @@ class Connection implements IConnection
     protected $prefix;
 
     /**
+     * @var mixed
+     */
+    private $dsn;
+
+    /**
+     * @var mixed
+     */
+    private $passwd;
+
+    /**
+     * @var mixed
+     */
+    private $user;
+
+    /**
      * @param string $dsn
      * @param string $user
-     * @param string $password
+     * @param string $passwd
      * @param string $prefix
      */
-    public function __construct(string $dsn, string $user, string $password, string $prefix = '')
+    public function __construct(string $dsn, string $user, string $passwd, string $prefix = '')
     {
-        try {
-            $this->pdo = new PDO('mysql:' . $dsn, $user, $password);
-            $this->prefix = $prefix;
-        } catch (PDOException $e) {
-            throw new ConnectionException($e->getMessage());
-        }
+        $this->dsn = $dsn;
+        $this->user = $user;
+        $this->passwd = $passwd;
+        $this->prefix = $prefix;
     }
 
     /**
@@ -45,10 +58,35 @@ class Connection implements IConnection
     public function compile(string $query): string
     {
         if (strpos($query, '{{') !== false && strpos($query, '}}') !== false) {
-            return preg_replace('~{{\s?([a-zA-Z0-9\_]+)\s?}}~', "{$this->prefix}\\1", $query);
+            return preg_replace('~{{\s+?([a-zA-Z0-9\_]+)\s+?}}~', "`{$this->prefix}\\1`", $query);
         } else {
             return $query;
         }
+    }
+
+    public function connect(): void
+    {
+        try {
+            $this->pdo = new PDO('mysql:' . $this->dsn, $this->user, $this->passwd);
+            $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        } catch (PDOException $e) {
+            throw new ConnectionException($e->getMessage());
+        }
+    }
+
+    public function disconnect(): void
+    {
+        if ($this->isConnected() === true) {
+            $this->pdo = null;
+        }
+    }
+
+    /**
+     * @return mixed
+     */
+    public function isConnected(): bool
+    {
+        return $this->pdo !== null;
     }
 
     /**
@@ -57,6 +95,17 @@ class Connection implements IConnection
     public function newQuery(): IQueryBuilder
     {
         return new QueryBuilder($this);
+    }
+
+    /**
+     * @param string $identifier
+     */
+    public function prep(string $identifier): string
+    {
+        if ($identifier === '*') {
+            return $identifier;
+        }
+        return '`' . trim($identifier, '`"') . '`';
     }
 
     /**

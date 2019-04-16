@@ -5,7 +5,7 @@ namespace Viloveul\MySql;
 use PDO;
 use Closure;
 use Exception;
-use Viloveul\MySql\Collection;
+use Viloveul\Database\Collection;
 use Viloveul\Database\Expression;
 use Viloveul\Database\Contracts\Model as IModel;
 use Viloveul\Database\Contracts\Collection as ICollection;
@@ -164,6 +164,15 @@ class QueryBuilder implements IQueryBuilder
         if ($result = $query->fetch(PDO::FETCH_ASSOC)) {
             $model = clone $this->getModel();
             $model->setAttributes($result);
+            if ($this->relations) {
+                foreach ($this->relations as $name => $callback) {
+                    if (is_callable($callback)) {
+                        $model->load($name, $callback);
+                    } else {
+                        $model->load($name);
+                    }
+                }
+            }
             return $model;
         } else {
             return false;
@@ -178,24 +187,30 @@ class QueryBuilder implements IQueryBuilder
         $query = $this->connection->runCommand($this->getQuery(false), $this->getParams());
         $results = $query->fetchAll(PDO::FETCH_ASSOC);
         $relations = [];
-        if ($this->relations) {
-            foreach ($this->relations as $name => $relation) {
-                [$type, $class, $pk, $fk] = $this->getModel()->relations()[$name];
-                $keys = array_map(function ($result) use ($pk) {
-                    return $result[$pk];
-                }, $results);
-                $model = $class::where($fk, $keys, IQueryBuilder::OPERATOR_IN);
-                is_callable($relation) and $relation($model);
-                $childs = $model->getResults();
-                foreach ($childs as $child) {
-                    $relations[$name]['pk'] = $pk;
-                    $relations[$name]['identifier'] = $child[$fk];
-                    if ($type === IModel::HAS_MANY) {
-                        $relations[$name]['values'][] = $child;
-                    } else {
-                        $relations[$name]['values'] = $child;
+        $maps = [];
+        foreach ($this->relations as $name => $relation) {
+            if ($rel = $this->parseRelations($name, $this->getModel()->relations())) {
+                [$type, $class, $through, $keys, $use] = $rel;
+                $model = new $class();
+                $model->whereGroup(function ($model) use ($keys, $results, &$maps) {
+                    foreach ($keys as $pk => $fk) {
+                        if (!array_key_exists($pk, $maps)) {
+                            $maps[$pk] = array_map(function ($m) use ($pk) {
+                                return $m[$pk];
+                            }, $results);
+                        }
+                        $model->where($fk, $maps[$pk], IQueryBuilder::OPERATOR_IN);
                     }
-                }
+                });
+
+                is_callable($use) and $model->whereGroup($use);
+                is_callable($relation) and $model->whereGroup($relation);
+
+                $relations[$name] = [
+                    'maps' => $keys,
+                    'type' => $type,
+                    'values' => $model->getResults(),
+                ];
             }
         }
         return new Collection($this->getModel(), $results, $relations);
@@ -221,6 +236,31 @@ class QueryBuilder implements IQueryBuilder
         $this->size = $size;
         $this->offset = $offset;
         return $this;
+    }
+
+    /**
+     * @param string  $name
+     * @param Closure $callback
+     */
+    public function load(string $name, Closure $callback = null): void
+    {
+        if ($relations = $this->parseRelations($name, $this->getModel()->relations())) {
+            [$type, $class, $through, $keys, $use] = $relations;
+            $model = new $class();
+            foreach ($keys as $parent => $child) {
+                $model->where($child, $this->getModel()->{$parent});
+            }
+
+            is_callable($use) and $model->whereGroup($use);
+            is_callable($callback) and $model->whereGroup($callback);
+
+            if ($type === IModel::HAS_MANY) {
+                $this->getModel()->setAttributes([$name => $model->getResults()]);
+            } else {
+                $this->getModel()->setAttributes([$name => $model->getResult()]);
+            }
+        }
+        $this->getModel()->resetState();
     }
 
     /**
@@ -341,6 +381,7 @@ class QueryBuilder implements IQueryBuilder
         try {
             $this->connection->runCommand($q, $this->getParams());
             $model->resetState();
+            $model->clearAttributes();
             $model->setAttributes($attributes);
             return $model;
         } catch (Exception $e) {
@@ -446,6 +487,7 @@ class QueryBuilder implements IQueryBuilder
     public function whereGroup(Closure $callback, int $separator = IQueryBuilder::SEPARATOR_AND): IQueryBuilder
     {
         $whereConditions = $this->whereConditions;
+        $this->whereConditions = [];
         $callback($this);
         if ($compiled = $this->buildWhereCondition()) {
             array_push($whereConditions, [
@@ -617,6 +659,26 @@ class QueryBuilder implements IQueryBuilder
             }
             $parts = array_map([$this->connection, 'prep'], $exploded);
             return implode('.', $parts);
+        }
+    }
+
+    /**
+     * @param  string  $name
+     * @param  array   $relations
+     * @return mixed
+     */
+    protected function parseRelations(string $name, array $relations): array
+    {
+        if (array_key_exists($name, $relations)) {
+            $relation = $relations[$name];
+            $def = ['type' => null, 'class' => null, 'through' => null, 'keys' => [], 'use' => null];
+            $resolve = [];
+            foreach ($def as $key => $value) {
+                $resolve[] = array_key_exists($key, $relation) ? $relation[$key] : $value;
+            }
+            return $resolve;
+        } else {
+            return [];
         }
     }
 }

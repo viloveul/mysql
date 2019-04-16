@@ -2,7 +2,7 @@
 
 require __DIR__ . '/vendor/autoload.php';
 
-$db = Viloveul\Database\DatabaseFactory::instance([
+Viloveul\Database\DatabaseFactory::instance([
     'default' => new Viloveul\MySql\Connection('host=127.0.0.1;dbname=viloveul_cms', 'dev', 'something', 'tbl_'),
 ]);
 
@@ -11,7 +11,13 @@ class User extends Viloveul\Database\Model
     public function relations(): array
     {
         return [
-            'uroles' => [static::HAS_MANY, UserRole::class, 'id', 'user_id'],
+            'uroles' => [
+                'class' => UserRole::class,
+                'type' => static::HAS_ONE,
+                'keys' => [
+                    'id' => 'user_id',
+                ],
+            ],
         ];
     }
 
@@ -42,6 +48,6 @@ class Role extends Viloveul\Database\Model
     }
 }
 
-$ur = UserRole::getResults();
-// $ur->user_id = 'dorrdr';
+$ur = User::with('uroles')->getResults();
+
 dd($ur);

@@ -13,7 +13,7 @@ class User extends Viloveul\Database\Model
         return [
             'uroles' => [
                 'class' => UserRole::class,
-                'type' => static::HAS_ONE,
+                'type' => static::HAS_MANY,
                 'keys' => [
                     'id' => 'user_id',
                 ],
@@ -48,6 +48,10 @@ class Role extends Viloveul\Database\Model
     }
 }
 
-$ur = User::with('uroles')->getResults();
+$ur = User::getResult();
 
-dd($ur);
+// $ur = new UserRole();
+// $ur->role_id = 'a';
+// $ur->user_id = 'b';
+// $ur->save();
+dd($ur->uroles);

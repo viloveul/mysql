@@ -4,10 +4,14 @@ namespace Viloveul\MySql;
 
 use PDO;
 use PDOException;
+use Viloveul\MySql\Compiler;
+use Viloveul\MySql\Condition;
 use Viloveul\MySql\QueryBuilder;
 use Viloveul\Database\QueryException;
 use Viloveul\Database\ConnectionException;
 use Viloveul\Database\Contracts\Model as IModel;
+use Viloveul\Database\Contracts\Compiler as ICompiler;
+use Viloveul\Database\Contracts\Condition as ICondition;
 use Viloveul\Database\Contracts\Connection as IConnection;
 use Viloveul\Database\Contracts\QueryBuilder as IQueryBuilder;
 
@@ -53,15 +57,14 @@ class Connection implements IConnection
     }
 
     /**
-     * @param string $query
+     * @return mixed
      */
-    public function compile(string $query): string
+    public function commit(): bool
     {
-        if (strpos($query, '{{') !== false && strpos($query, '}}') !== false) {
-            return preg_replace('~{{\s+?([a-zA-Z0-9\_]+)\s+?}}~', "`{$this->prefix}\\1`", $query);
-        } else {
-            return $query;
+        if ($this->inTransaction()) {
+            return $this->pdo->commit();
         }
+        return false;
     }
 
     public function connect(): void
@@ -69,6 +72,7 @@ class Connection implements IConnection
         try {
             $this->pdo = new PDO('mysql:' . $this->dsn, $this->user, $this->passwd);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
             throw new ConnectionException($e->getMessage());
         }
@@ -77,8 +81,36 @@ class Connection implements IConnection
     public function disconnect(): void
     {
         if ($this->isConnected() === true) {
+            if ($this->inTransaction()) {
+                $this->rollback();
+            }
             $this->pdo = null;
         }
+    }
+
+    /**
+     * @param  string  $query
+     * @param  array   $params
+     * @return mixed
+     */
+    public function execute(string $query, array $params = [])
+    {
+        try {
+            $compiled = $this->prepare($query);
+            $query = $this->pdo->prepare($compiled);
+            $query->execute($params);
+            return $query;
+        } catch (PDOException $e) {
+            throw new QueryException($e->getMessage());
+        }
+    }
+
+    /**
+     * @return mixed
+     */
+    public function inTransaction(): bool
+    {
+        return $this->pdo->inTransaction();
     }
 
     /**
@@ -90,38 +122,61 @@ class Connection implements IConnection
     }
 
     /**
+     * @param IQueryBuilder $builder
+     */
+    public function newCompiler(IQueryBuilder $builder): ICompiler
+    {
+        return new Compiler($builder);
+    }
+
+    /**
+     * @param IQueryBuilder $builder
+     * @param ICompiler     $compiler
+     */
+    public function newCondition(IQueryBuilder $builder, ICompiler $compiler): ICondition
+    {
+        return new Condition($builder, $compiler);
+    }
+
+    /**
      * @param IModel $model
      */
-    public function newQuery(): IQueryBuilder
+    public function newQueryBuilder(): IQueryBuilder
     {
         return new QueryBuilder($this);
     }
 
     /**
-     * @param string $identifier
+     * @param string $query
      */
-    public function prep(string $identifier): string
+    public function prepare(string $query): string
     {
-        if ($identifier === '*') {
-            return $identifier;
+        if (strpos($query, '{{') !== false && strpos($query, '}}') !== false) {
+            return preg_replace('~{{\s+?([a-zA-Z0-9\_]+)\s+?}}~', "`{$this->prefix}\\1`", $query);
+        } else {
+            return $query;
         }
-        return '`' . trim($identifier, '`"') . '`';
     }
 
     /**
-     * @param  string  $query
-     * @param  array   $params
      * @return mixed
      */
-    public function runCommand(string $query, array $params = [])
+    public function rollback(): bool
     {
-        try {
-            $compiled = $this->compile($query);
-            $query = $this->pdo->prepare($compiled);
-            $query->execute($params);
-            return $query;
-        } catch (PDOException $e) {
-            throw new QueryException($e->getMessage());
+        if ($this->inTransaction()) {
+            return $this->pdo->rollback();
         }
+        return false;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function transaction(): bool
+    {
+        if (!$this->inTransaction()) {
+            return $this->pdo->beginTransaction();
+        }
+        return true;
     }
 }

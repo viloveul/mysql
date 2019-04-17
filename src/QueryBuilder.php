@@ -132,8 +132,8 @@ class QueryBuilder implements IQueryBuilder
         $attributes = $model->oldAttributes();
         $primarys = (array) $model->primary();
         foreach ($primarys as $key) {
-            if (array_key_exists($key, $attributes)) {
-                $this->where($key, $attributes[$key]);
+            if (array_key_exists($key, $attributes) && !$model->isAttributeCount($key)) {
+                $this->where([$key => $attributes[$key]]);
             }
         }
         $alias = $this->quote($model->getAlias());
@@ -173,23 +173,21 @@ class QueryBuilder implements IQueryBuilder
     {
         $q = 'SELECT ' . $this->compiler->buildSelectedColumn($this->selectedColumns);
         $q .= ' FROM ' . $this->getModel()->table() . ' AS ' . $this->quote($this->getModel()->getAlias());
-
         if ($where = $this->compiler->buildCondition($this->whereCondition->all())) {
             $q .= " WHERE {$where}";
         }
-
         if ($groups = $this->compiler->buildGroupBy($this->groups)) {
             $q .= ' GROUP BY ' . $groups;
         }
-
+        if ($having = $this->compiler->buildCondition($this->havingCondition->all())) {
+            $q .= " HAVING {$having}";
+        }
         if ($order = $this->compiler->buildOrderBy($this->orders)) {
             $q .= ' ORDER BY ' . $order;
         }
-
         if ($this->size > 0) {
             $q .= ' LIMIT ' . $this->size . ' OFFSET ' . abs($this->offset);
         }
-
         return $compile ? $this->connection->prepare($q) : $q;
     }
 
@@ -203,13 +201,35 @@ class QueryBuilder implements IQueryBuilder
         if ($result = $query->fetch()) {
             $model = clone $this->getModel();
             $model->setAttributes($result);
-            if ($this->relations) {
-                foreach ($this->relations as $name => $callback) {
-                    if (is_callable($callback)) {
-                        $model->load($name, $callback);
-                    } else {
-                        $model->load($name);
+            foreach ($this->relations as $name => $callback) {
+                if (is_callable($callback)) {
+                    $model->load($name, $callback);
+                } else {
+                    $model->load($name);
+                }
+            }
+            foreach ($this->withCounts as $name => $callback) {
+                if ($rel = $this->compiler->parseRelations($name, $this->getModel()->relations())) {
+                    [$type, $class, $through, $keys, $use] = $rel;
+                    $child = new $class();
+                    $child->where(function ($where) use ($keys, $result, &$maps) {
+                        foreach ($keys as $pk => $fk) {
+                            $where->add([$fk => $result[$pk]], IQueryBuilder::OPERATOR_IN);
+                        }
+                    });
+
+                    is_callable($use) and $use($child);
+                    is_callable($relation) and $relation($child);
+
+                    foreach ($keys as $key) {
+                        $child->groupBy($key);
                     }
+
+                    $model->setAttributes([
+                        "{$name}_count" => $child->count(),
+                    ]);
+
+                    $child->resetState();
                 }
             }
             return $model;
@@ -253,8 +273,8 @@ class QueryBuilder implements IQueryBuilder
                     }
                 });
 
-                is_callable($use) and $model->where($use);
-                is_callable($relation) and $model->where($relation);
+                is_callable($use) and $use($model);
+                is_callable($relation) and $relation($model);
 
                 $relations[$name] = [
                     'maps' => $keys,
@@ -264,33 +284,63 @@ class QueryBuilder implements IQueryBuilder
             }
         }
 
-        // $counts = [];
-        // foreach ($this->withCounts as $name => $relation) {
-        //     if ($rel = $this->compiler->parseRelations($name, $this->getModel()->relations())) {
-        //         [$type, $class, $through, $keys, $use] = $rel;
-        //         $model = new $class();
-        //         $model->where(function ($model) use ($keys, $results, &$maps) {
-        //             foreach ($keys as $pk => $fk) {
-        //                 if (!array_key_exists($pk, $maps)) {
-        //                     $maps[$pk] = array_map(function ($m) use ($pk) {
-        //                         return $m[$pk];
-        //                     }, $results);
-        //                 }
-        //                 $model->where($fk, $maps[$pk], IQueryBuilder::OPERATOR_IN);
-        //             }
-        //         });
+        $counts = [];
+        foreach ($this->withCounts as $name => $relation) {
+            if ($rel = $this->compiler->parseRelations($name, $this->getModel()->relations())) {
+                [$type, $class, $through, $keys, $use] = $rel;
+                $model = new $class();
+                $model->select('count(*)');
+                $model->where(function ($where) use ($keys, $results, &$maps) {
+                    foreach ($keys as $pk => $fk) {
+                        if (!array_key_exists($pk, $maps)) {
+                            $maps[$pk] = array_map(function ($m) use ($pk) {
+                                return $m[$pk];
+                            }, $results);
+                        }
+                        $where->add([$fk => $maps[$pk]], IQueryBuilder::OPERATOR_IN);
+                    }
+                });
 
-        //         is_callable($use) and $model->where($use);
-        //         is_callable($relation) and $model->where($relation);
+                is_callable($use) and $use($model);
+                is_callable($relation) and $relation($model);
 
-        //         $relations[$name] = [
-        //             'maps' => $keys,
-        //             'type' => $type,
-        //             'values' => $model->getResults(),
-        //         ];
-        //     }
-        // }
-        return new Collection($this->getModel(), $results, $relations);
+                foreach ($keys as $key) {
+                    $model->select($key);
+                    $model->groupBy($key);
+                }
+                $query = $model->connection()->execute($model->getQuery(false), $model->getParams());
+                $resultCounts = [];
+                while ($c = $query->fetch()) {
+                    $k = '';
+                    foreach ($keys as $key) {
+                        $k .= $c[$key];
+                    }
+                    $resultCounts[] = [
+                        'value' => $c['count'],
+                        'identifier' => $k,
+                        'keys' => array_keys($keys),
+                    ];
+                }
+                $counts[$name] = $resultCounts;
+            }
+        }
+
+        $finalResults = array_map(function ($result) use ($counts) {
+            foreach ($counts as $name => $c) {
+                foreach ($c as $row) {
+                    $k = '';
+                    foreach ($row['keys'] as $key) {
+                        $k .= $result[$key];
+                    }
+                    if ($row['identifier'] === $k) {
+                        $result[$name . '_count'] = $row['value'];
+                    }
+                }
+            }
+            return $result;
+        }, $results);
+
+        return new Collection($this->getModel(), $finalResults, $relations);
     }
 
     /**
@@ -339,12 +389,14 @@ class QueryBuilder implements IQueryBuilder
         if ($relations = $this->compiler->parseRelations($name, $this->getModel()->relations())) {
             [$type, $class, $through, $keys, $use] = $relations;
             $model = new $class();
-            foreach ($keys as $parent => $child) {
-                $model->where([$child => $this->getModel()->{$parent}]);
-            }
+            $model->where(function (ICondition $where) use ($keys) {
+                foreach ($keys as $parent => $child) {
+                    $where->add([$child => $this->getModel()->{$parent}]);
+                }
+            });
 
-            is_callable($use) and $model->where($use);
-            is_callable($callback) and $model->where($callback);
+            is_callable($use) and $use($model);
+            is_callable($callback) and $callback($model);
 
             if ($type === IModel::HAS_MANY) {
                 $this->getModel()->setAttributes([$name => $model->getResults()]);
@@ -434,7 +486,7 @@ class QueryBuilder implements IQueryBuilder
         $values = [];
         $duplicates = [];
         foreach ($attributes as $key => $value) {
-            if (!($value instanceof IModel)) {
+            if (!($value instanceof IModel) && !$model->isAttributeCount($key)) {
                 $columns[] = $this->quote($key);
                 $params = $this->compiler->makeParams([$value]);
                 $values[] = $params[0];
@@ -541,8 +593,8 @@ class QueryBuilder implements IQueryBuilder
                 }
             });
 
-            is_callable($callback) and $model->where($callback);
-            is_callable($use) and $model->where($use);
+            is_callable($callback) and $callback($model);
+            is_callable($use) and $use($model);
             $condition = [
                 'separator' => $separator,
                 'argument' => 'EXISTS (' . $model->getQuery(true) . ')',

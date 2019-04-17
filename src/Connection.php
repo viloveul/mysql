@@ -38,6 +38,11 @@ class Connection implements IConnection
     private $logs = [];
 
     /**
+     * @var array
+     */
+    private $options = [];
+
+    /**
      * @var mixed
      */
     private $passwd;
@@ -52,13 +57,15 @@ class Connection implements IConnection
      * @param string $user
      * @param string $passwd
      * @param string $prefix
+     * @param array  $options
      */
-    public function __construct(string $dsn, string $user, string $passwd, string $prefix = '')
+    public function __construct(string $dsn, string $user, string $passwd, string $prefix = '', array $options = [])
     {
         $this->dsn = $dsn;
         $this->user = $user;
         $this->passwd = $passwd;
         $this->prefix = $prefix;
+        $this->options = $options;
     }
 
     public function __destruct()
@@ -84,6 +91,9 @@ class Connection implements IConnection
             $this->pdo = new PDO('mysql:' . $this->dsn, $this->user, $this->passwd);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            foreach ($this->options as $key => $value) {
+                $this->pdo->setAttribute($key, $value);
+            }
         } catch (PDOException $e) {
             throw new ConnectionException($e->getMessage());
         }

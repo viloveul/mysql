@@ -33,6 +33,11 @@ class Connection implements IConnection
     private $dsn;
 
     /**
+     * @var array
+     */
+    private $logs = [];
+
+    /**
      * @var mixed
      */
     private $passwd;
@@ -54,6 +59,12 @@ class Connection implements IConnection
         $this->user = $user;
         $this->passwd = $passwd;
         $this->prefix = $prefix;
+    }
+
+    public function __destruct()
+    {
+        $this->disconnect();
+        $this->logs = [];
     }
 
     /**
@@ -99,6 +110,10 @@ class Connection implements IConnection
             $compiled = $this->prepare($query);
             $query = $this->pdo->prepare($compiled);
             $query->execute($params);
+            $this->logs[] = [
+                'query' => $compiled,
+                'params' => $params,
+            ];
             return $query;
         } catch (PDOException $e) {
             throw new QueryException($e->getMessage());
@@ -167,6 +182,14 @@ class Connection implements IConnection
             return $this->pdo->rollback();
         }
         return false;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function showLogQueries(): array
+    {
+        return $this->logs;
     }
 
     /**

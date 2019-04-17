@@ -2,7 +2,7 @@
 
 require __DIR__ . '/vendor/autoload.php';
 
-Viloveul\Database\DatabaseFactory::instance([
+$db = Viloveul\Database\DatabaseFactory::instance([
     'default' => new Viloveul\MySql\Connection('host=127.0.0.1;dbname=viloveul_cms', 'dev', 'something', 'tbl_'),
 ]);
 
@@ -48,10 +48,14 @@ class Role extends Viloveul\Database\Model
     }
 }
 
-$ur = User::getResult();
+$start = microtime(true);
 
-// $ur = new UserRole();
-// $ur->role_id = 'a';
-// $ur->user_id = 'b';
-// $ur->save();
-dd($ur->uroles);
+$ur = User::withCount('uroles')->with('uroles')->getResults();
+
+print_r($ur->toArray());
+
+print_r($db->getConnection()->showLogQueries());
+
+echo memory_get_usage() . PHP_EOL;
+
+echo (microtime(true) - $start) . PHP_EOL;

@@ -197,6 +197,7 @@ class QueryBuilder implements IQueryBuilder
     public function getResult()
     {
         $this->limit(1, 0);
+        $this->getModel()->beforeFind();
         $query = $this->connection->execute($this->getQuery(false), $this->getParams());
         if ($result = $query->fetch()) {
             $model = clone $this->getModel();
@@ -219,7 +220,7 @@ class QueryBuilder implements IQueryBuilder
                     });
 
                     is_callable($use) and $use($child);
-                    is_callable($relation) and $relation($child);
+                    is_callable($callback) and $callback($child);
 
                     foreach ($keys as $key) {
                         $child->groupBy($key);
@@ -232,6 +233,7 @@ class QueryBuilder implements IQueryBuilder
                     $child->resetState();
                 }
             }
+            $model->afterFind();
             return $model;
         } else {
             return false;
@@ -245,6 +247,7 @@ class QueryBuilder implements IQueryBuilder
     {
         $maps = [];
         $relations = [];
+        $this->getModel()->beforeFind();
         $query = $this->connection->execute(
             $this->getQuery(false),
             $this->getParams()
@@ -398,11 +401,15 @@ class QueryBuilder implements IQueryBuilder
             is_callable($use) and $use($model);
             is_callable($callback) and $callback($model);
 
+            $model->beforeFind();
+
             if ($type === IModel::HAS_MANY) {
                 $this->getModel()->setAttributes([$name => $model->getResults()]);
             } else {
                 $this->getModel()->setAttributes([$name => $model->getResult()]);
             }
+
+            $model->afterFind();
         }
         $this->getModel()->resetState();
     }
@@ -493,6 +500,8 @@ class QueryBuilder implements IQueryBuilder
             }
         }
 
+        $model->beforeSave();
+
         if ($model->isNewRecord()) {
             $q = 'INSERT INTO ' . $model->table();
             $q .= '(' . implode(', ', $columns) . ')';
@@ -525,6 +534,7 @@ class QueryBuilder implements IQueryBuilder
             $model->resetState();
             $model->clearAttributes();
             $model->setAttributes($attributes);
+            $model->afterSave();
             return $model;
         } catch (Exception $e) {
             throw $e;

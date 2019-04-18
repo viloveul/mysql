@@ -5,9 +5,15 @@ require __DIR__ . '/vendor/autoload.php';
 $db = Viloveul\Database\DatabaseFactory::instance([
     'default' => new Viloveul\MySql\Connection('host=127.0.0.1;dbname=viloveul_cms', 'dev', 'something', 'tbl_'),
 ]);
+$db->load();
 
 class User extends Viloveul\Database\Model
 {
+    public function afterFind(): void
+    {
+        $this->abc = 'def';
+    }
+
     public function relations(): array
     {
         return [
@@ -29,6 +35,14 @@ class User extends Viloveul\Database\Model
 
 class UserRole extends Viloveul\Database\Model
 {
+    /**
+     * @var array
+     */
+    protected $protects = [
+        // 'user_id',
+        'role_id',
+    ];
+
     public function primary()
     {
         return ['user_id', 'role_id'];
@@ -50,9 +64,9 @@ class Role extends Viloveul\Database\Model
 
 $start = microtime(true);
 
-$ur = User::withCount('uroles')->with('uroles')->getResults();
+$ur = User::getResults();
 
-print_r($ur->toArray());
+echo print_r($ur->toArray());
 
 print_r($db->getConnection()->showLogQueries());
 

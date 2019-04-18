@@ -83,9 +83,9 @@ class Compiler implements ICompiler
         } else {
             preg_match_all('~\`([a-zA-Z0-9\_]+)\`~mi', $column, $matches);
             if (array_key_exists(1, $matches) && count($matches[1]) > 0) {
-                return $this->builder->quote(end($matches[1]));
+                return $this->quote(end($matches[1]));
             } else {
-                return $this->builder->quote(preg_replace('/[^a-zA-Z0-9\_\.]+/', '', $column));
+                return $this->quote(preg_replace('/[^a-zA-Z0-9\_\.]+/', '', $column));
             }
         }
     }
@@ -117,7 +117,7 @@ class Compiler implements ICompiler
                 if (count($exploded) === 1) {
                     array_unshift($exploded, $this->builder->getModel()->getAlias());
                 }
-                $parts = array_map([$this->builder, 'quote'], $exploded);
+                $parts = array_map([$this, 'quote'], $exploded);
                 return $match[1] . '(' . implode('.', $parts) . ')';
             }, $column);
         } else {
@@ -125,7 +125,7 @@ class Compiler implements ICompiler
             if (count($exploded) === 1) {
                 array_unshift($exploded, $this->builder->getModel()->getAlias());
             }
-            $parts = array_map([$this->builder, 'quote'], $exploded);
+            $parts = array_map([$this, 'quote'], $exploded);
             return implode('.', $parts);
         }
     }
@@ -148,5 +148,17 @@ class Compiler implements ICompiler
         } else {
             return [];
         }
+    }
+
+    /**
+     * @param  string  $identifier
+     * @return mixed
+     */
+    public function quote(string $identifier): string
+    {
+        if ($identifier === '*') {
+            return $identifier;
+        }
+        return '`' . trim($identifier, '`"') . '`';
     }
 }

@@ -4,12 +4,14 @@ namespace Viloveul\MySql;
 
 use PDO;
 use PDOException;
+use Viloveul\MySql\Schema;
 use Viloveul\MySql\Compiler;
 use Viloveul\MySql\Condition;
 use Viloveul\MySql\QueryBuilder;
 use Viloveul\Database\QueryException;
 use Viloveul\Database\ConnectionException;
 use Viloveul\Database\Contracts\Model as IModel;
+use Viloveul\Database\Contracts\Schema as ISchema;
 use Viloveul\Database\Contracts\Compiler as ICompiler;
 use Viloveul\Database\Contracts\Condition as ICondition;
 use Viloveul\Database\Contracts\Connection as IConnection;
@@ -30,12 +32,17 @@ class Connection implements IConnection
     /**
      * @var mixed
      */
-    private $dsn;
+    private $host;
 
     /**
      * @var array
      */
     private $logs = [];
+
+    /**
+     * @var mixed
+     */
+    private $name;
 
     /**
      * @var array
@@ -45,25 +52,41 @@ class Connection implements IConnection
     /**
      * @var mixed
      */
-    private $passwd;
+    private $password;
 
     /**
      * @var mixed
      */
-    private $user;
+    private $port;
 
     /**
-     * @param string $dsn
-     * @param string $user
-     * @param string $passwd
+     * @var mixed
+     */
+    private $username;
+
+    /**
+     * @param string $username
+     * @param string $password
+     * @param string $name
+     * @param string $host
+     * @param string $port
      * @param string $prefix
      * @param array  $options
      */
-    public function __construct(string $dsn, string $user, string $passwd, string $prefix = '', array $options = [])
-    {
-        $this->dsn = $dsn;
-        $this->user = $user;
-        $this->passwd = $passwd;
+    public function __construct(
+        string $username,
+        string $password,
+        string $name,
+        string $host,
+        string $port,
+        string $prefix = '',
+        array $options = []
+    ) {
+        $this->username = $username;
+        $this->password = $password;
+        $this->name = $name ?: 'viloveul';
+        $this->host = $host ?: '127.0.0.1';
+        $this->port = $port ?: 3306;
         $this->prefix = $prefix;
         $this->options = $options;
     }
@@ -88,7 +111,8 @@ class Connection implements IConnection
     public function connect(): void
     {
         try {
-            $this->pdo = new PDO('mysql:' . $this->dsn, $this->user, $this->passwd);
+            $dsn = "mysql:dbname={$this->name};host={$this->host};port={$this->port}";
+            $this->pdo = new PDO($dsn, $this->username, $this->password);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
             foreach ($this->options as $key => $value) {
@@ -133,6 +157,38 @@ class Connection implements IConnection
     /**
      * @return mixed
      */
+    public function getDbHost(): string
+    {
+        return $this->host;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getDbName(): string
+    {
+        return $this->name;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getDbPort(): string
+    {
+        return $this->port;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getPrefix(): string
+    {
+        return $this->prefix;
+    }
+
+    /**
+     * @return mixed
+     */
     public function inTransaction(): bool
     {
         return $this->pdo->inTransaction();
@@ -155,12 +211,11 @@ class Connection implements IConnection
     }
 
     /**
-     * @param IQueryBuilder $builder
-     * @param ICompiler     $compiler
+     * @param ICompiler $compiler
      */
-    public function newCondition(IQueryBuilder $builder, ICompiler $compiler): ICondition
+    public function newCondition(ICompiler $compiler): ICondition
     {
-        return new Condition($builder, $compiler);
+        return new Condition($compiler);
     }
 
     /**
@@ -169,6 +224,15 @@ class Connection implements IConnection
     public function newQueryBuilder(): IQueryBuilder
     {
         return new QueryBuilder($this);
+    }
+
+    /**
+     * @param string $name
+     * @param array  $options
+     */
+    public function newSchema(string $name, array $options = []): ISchema
+    {
+        return new Schema($this, $name, $options);
     }
 
     /**

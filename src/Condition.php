@@ -15,11 +15,6 @@ class Condition implements ICondition
     /**
      * @var mixed
      */
-    protected $builder;
-
-    /**
-     * @var mixed
-     */
     protected $compiler;
 
     /**
@@ -28,12 +23,10 @@ class Condition implements ICondition
     protected $conditions = [];
 
     /**
-     * @param IQueryBuilder $builder
-     * @param ICompiler     $compiler
+     * @param ICompiler $compiler
      */
-    public function __construct(IQueryBuilder $builder, ICompiler $compiler)
+    public function __construct(ICompiler $compiler)
     {
-        $this->builder = $builder;
         $this->compiler = $compiler;
     }
 

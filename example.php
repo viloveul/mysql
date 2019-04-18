@@ -3,7 +3,7 @@
 require __DIR__ . '/vendor/autoload.php';
 
 $db = Viloveul\Database\DatabaseFactory::instance([
-    'default' => new Viloveul\MySql\Connection('host=127.0.0.1;dbname=viloveul_cms', 'dev', 'something', 'tbl_'),
+    'default' => new Viloveul\MySql\Connection('dev', 'something', 'viloveul_cms', '127.0.0.1', 3306, 'tbl_'),
 ]);
 $db->load();
 
@@ -62,11 +62,19 @@ class Role extends Viloveul\Database\Model
     }
 }
 
+$jos = $db->getConnection()->newSchema('wah');
+$jos->set('id', Viloveul\Database\Contracts\Schema::TYPE_BIGINT)->increment()->unsigned()->primary();
+$jos->set('hhu', Viloveul\Database\Contracts\Schema::TYPE_VARCHAR)->nullable();
+$jos->run();
+// $dor = UserRole::getResultOrCreate(['role_id' => 'fajrul'], ['user_id' => 'jos']);
+
+// dd($dor);
+
 $start = microtime(true);
 
-$ur = User::getResults();
+// $ur = User::getResults();
 
-echo print_r($ur->toArray());
+// echo print_r($ur->toArray());
 
 print_r($db->getConnection()->showLogQueries());
 

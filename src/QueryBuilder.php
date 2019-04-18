@@ -91,8 +91,8 @@ class QueryBuilder implements IQueryBuilder
     {
         $this->connection = $connection;
         $this->compiler = $connection->newCompiler($this);
-        $this->whereCondition = $connection->newCondition($this, $this->compiler);
-        $this->havingCondition = $connection->newCondition($this, $this->compiler);
+        $this->whereCondition = $connection->newCondition($this->compiler);
+        $this->havingCondition = $connection->newCondition($this->compiler);
     }
 
     public function __destruct()
@@ -136,7 +136,7 @@ class QueryBuilder implements IQueryBuilder
                 $this->where([$key => $attributes[$key]]);
             }
         }
-        $alias = $this->quote($model->getAlias());
+        $alias = $this->compiler->quote($model->getAlias());
         $q = 'DELETE FROM ' . $alias . ' USING ' . $model->table() . ' AS ' . $alias;
         if ($where = $this->compiler->buildCondition($this->whereCondition->all())) {
             $q .= " WHERE {$where}";
@@ -172,7 +172,7 @@ class QueryBuilder implements IQueryBuilder
     public function getQuery(bool $compile = true): string
     {
         $q = 'SELECT ' . $this->compiler->buildSelectedColumn($this->selectedColumns);
-        $q .= ' FROM ' . $this->getModel()->table() . ' AS ' . $this->quote($this->getModel()->getAlias());
+        $q .= ' FROM ' . $this->getModel()->table() . ' AS ' . $this->compiler->quote($this->getModel()->getAlias());
         if ($where = $this->compiler->buildCondition($this->whereCondition->all())) {
             $q .= " WHERE {$where}";
         }
@@ -237,6 +237,25 @@ class QueryBuilder implements IQueryBuilder
             return $model;
         } else {
             return false;
+        }
+    }
+
+    /**
+     * @param  array   $conditions
+     * @param  array   $attributes
+     * @return mixed
+     */
+    public function getResultOrCreate(array $conditions, array $attributes = []): IModel
+    {
+        $this->whereCondition->clear();
+        if ($model = $this->where($conditions)->getResult()) {
+            return $model;
+        } else {
+            $model = $this->getModel()->newInstance();
+            $model->setAttributes($attributes);
+            $model->setAttributes($conditions);
+            $model->save();
+            return $model;
         }
     }
 
@@ -471,18 +490,6 @@ class QueryBuilder implements IQueryBuilder
     }
 
     /**
-     * @param  string  $identifier
-     * @return mixed
-     */
-    public function quote(string $identifier): string
-    {
-        if ($identifier === '*') {
-            return $identifier;
-        }
-        return '`' . trim($identifier, '`"') . '`';
-    }
-
-    /**
      * @return mixed
      */
     public function save()
@@ -494,7 +501,7 @@ class QueryBuilder implements IQueryBuilder
         $duplicates = [];
         foreach ($attributes as $key => $value) {
             if (!($value instanceof IModel) && !$model->isAttributeCount($key)) {
-                $columns[] = $this->quote($key);
+                $columns[] = $this->compiler->quote($key);
                 $params = $this->compiler->makeParams([$value]);
                 $values[] = $params[0];
             }
@@ -523,7 +530,7 @@ class QueryBuilder implements IQueryBuilder
             foreach ($columns as $key => $value) {
                 $arguments[] = "{$value} = {$values[$key]}";
             }
-            $q = 'UPDATE ' . $model->table() . ' AS ' . $this->quote($model->getAlias()) . ' SET ' . implode(', ', $arguments);
+            $q = 'UPDATE ' . $model->table() . ' AS ' . $this->compiler->quote($model->getAlias()) . ' SET ' . implode(', ', $arguments);
             if ($where = $this->compiler->buildCondition($this->whereCondition->all())) {
                 $q .= " WHERE {$where}";
             }
@@ -596,8 +603,8 @@ class QueryBuilder implements IQueryBuilder
             $model->where(function (ICondition $where) use ($name, $keys, $model) {
                 foreach ($keys as $parent => $child) {
                     $columns = [
-                        $model->quote($name) . '.' . $model->quote($child),
-                        $this->quote($this->getModel()->getAlias()) . '.' . $this->quote($parent),
+                        $this->compiler->quote($name) . '.' . $this->compiler->quote($child),
+                        $this->compiler->quote($this->getModel()->getAlias()) . '.' . $this->compiler->quote($parent),
                     ];
                     $where->add(new Expression(implode('=', $columns)));
                 }

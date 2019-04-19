@@ -60,8 +60,7 @@ class Schema implements ISchema
     /**
      * @param $v
      */
-    public function default($v): ISchema
-    {
+    function default($v): ISchema{
         $this->columns[$this->pointer]['default'] = in_array($v, ['NULL', 'CURRENT_TIMESTAMP']) ? $v : "'{$v}'";
         return $this;
     }
@@ -110,8 +109,7 @@ class Schema implements ISchema
     }
 
     /**
-     * @param  string  $column
-     * @return mixed
+     * @param string $column
      */
     public function index(string $column = null): ISchema
     {
@@ -141,7 +139,10 @@ class Schema implements ISchema
         if (empty($column)) {
             $this->primaries[] = $this->columns[$this->pointer]['name'];
         } else {
-            $this->primaries[] = func_get_args();
+            $args = func_get_args();
+            foreach ($args as $key) {
+                $this->primaries[] = $key;
+            }
         }
         return $this;
     }
@@ -227,9 +228,9 @@ class Schema implements ISchema
     }
 
     /**
-     * @param string   $name
-     * @param int      $type
-     * @param $value
+     * @param string              $name
+     * @param int                 $type
+     * @param ISchemaTYPE_VARCHAR $value
      */
     public function set(string $name, int $type = ISchema::TYPE_VARCHAR, $value = null): ISchema
     {

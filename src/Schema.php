@@ -327,5 +327,6 @@ class Schema implements ISchema
     public function value($v): ISchema
     {
         $this->columns[$this->pointer]['default'] = in_array($v, ['NULL', 'CURRENT_TIMESTAMP']) ? $v : "'{$v}'";
+        return $this;
     }
 }

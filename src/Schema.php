@@ -58,6 +58,14 @@ class Schema implements ISchema
     private $uniques = [];
 
     /**
+     * @param $v
+     */
+    function default($v): ISchema{
+        $this->columns[$this->pointer]['default'] = in_array($v, ['NULL', 'CURRENT_TIMESTAMP']) ? $v : "'{$v}'";
+        return $this;
+    }
+
+    /**
      * @param IConnection $connection
      * @param string      $name
      * @param array       $options
@@ -138,7 +146,7 @@ class Schema implements ISchema
             foreach ($this->columns as $column) {
                 $col = $this->connection->quote($column['name']) . ' ' . $column['type'] . ' ' . $column['attr'];
                 if ($column['default'] !== null) {
-                    $col .= ' ' . $column['default'];
+                    $col .= ' DEFAULT ' . $column['default'];
                 }
                 $values[] = preg_replace('/\s+/', ' ', $col);
             }
@@ -174,7 +182,7 @@ class Schema implements ISchema
                 if (!$this->hasColumn($column['name'])) {
                     $col = 'ADD COLUMN ' . $this->connection->quote($column['name']) . ' ' . $column['type'] . ' ' . $column['attr'];
                     if ($column['default'] !== null) {
-                        $col .= ' ' . $column['default'];
+                        $col .= ' DEFAULT ' . $column['default'];
                     }
                     $values[] = preg_replace('/\s+/', ' ', $col);
                 }
@@ -208,11 +216,11 @@ class Schema implements ISchema
     }
 
     /**
-     * @param string     $name
-     * @param int        $type
-     * @param $default
+     * @param string              $name
+     * @param int                 $type
+     * @param ISchemaTYPE_VARCHAR $value
      */
-    public function set(string $name, int $type = ISchema::TYPE_VARCHAR, $lenOrVals = null): ISchema
+    public function set(string $name, int $type = ISchema::TYPE_VARCHAR, $value = null): ISchema
     {
         $column = [
             'name' => $name,
@@ -230,7 +238,7 @@ class Schema implements ISchema
                 $column['type'] = 'blob';
                 break;
             case ISchema::TYPE_CHAR:
-                $column['type'] = sprintf('char(%d)', $lenOrVals ?: 255);
+                $column['type'] = sprintf('char(%d)', $value ?: 255);
                 break;
             case ISchema::TYPE_DATE:
                 $column['type'] = 'date';
@@ -244,7 +252,7 @@ class Schema implements ISchema
             case ISchema::TYPE_ENUM:
                 $values = array_map(function ($v) {
                     return "'{$v}'";
-                }, $lenOrVals);
+                }, $value);
                 $column['type'] = sprintf('enum(%s)', implode(', ', $values));
                 break;
             case ISchema::TYPE_INT:
@@ -284,13 +292,13 @@ class Schema implements ISchema
                 $column['type'] = 'timestamp';
                 break;
             case ISchema::TYPE_VARCHAR:
-                $column['type'] = sprintf('varchar(%d)', $lenOrVals ?: 255);
+                $column['type'] = sprintf('varchar(%d)', $value ?: 255);
                 break;
             case ISchema::TYPE_YEAR:
                 $column['type'] = 'year';
                 break;
             default:
-                $column['type'] = sprintf('varchar(%d)', $lenOrVals ?: 255);
+                $column['type'] = sprintf('varchar(%d)', $value ?: 255);
                 break;
         }
         $this->pointer++;
@@ -318,15 +326,6 @@ class Schema implements ISchema
     public function unsigned(): ISchema
     {
         $this->columns[$this->pointer]['attr'] = 'UNSIGNED ' . $this->columns[$this->pointer]['attr'];
-        return $this;
-    }
-
-    /**
-     * @param $v
-     */
-    public function value($v): ISchema
-    {
-        $this->columns[$this->pointer]['default'] = in_array($v, ['NULL', 'CURRENT_TIMESTAMP']) ? $v : "'{$v}'";
         return $this;
     }
 }

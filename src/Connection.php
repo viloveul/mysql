@@ -207,7 +207,7 @@ class Connection implements IConnection
      */
     public function newCompiler(IQueryBuilder $builder): ICompiler
     {
-        return new Compiler($builder);
+        return new Compiler($this, $builder);
     }
 
     /**
@@ -241,10 +241,22 @@ class Connection implements IConnection
     public function prepare(string $query): string
     {
         if (strpos($query, '{{') !== false && strpos($query, '}}') !== false) {
-            return preg_replace('~{{\s+?([a-zA-Z0-9\_]+)\s+?}}~', "`{$this->prefix}\\1`", $query);
+            return preg_replace('~{{\s?([a-zA-Z0-9\_]+)\s?}}~', "`{$this->prefix}\\1`", $query);
         } else {
             return $query;
         }
+    }
+
+    /**
+     * @param  string  $identifier
+     * @return mixed
+     */
+    public function quote(string $identifier): string
+    {
+        if ($identifier === '*') {
+            return $identifier;
+        }
+        return '`' . trim($identifier, '`"') . '`';
     }
 
     /**

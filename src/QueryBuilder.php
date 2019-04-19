@@ -136,7 +136,7 @@ class QueryBuilder implements IQueryBuilder
                 $this->where([$key => $attributes[$key]]);
             }
         }
-        $alias = $this->compiler->quote($model->getAlias());
+        $alias = $this->connection->quote($model->getAlias());
         $q = 'DELETE FROM ' . $alias . ' USING ' . $model->table() . ' AS ' . $alias;
         if ($where = $this->compiler->buildCondition($this->whereCondition->all())) {
             $q .= " WHERE {$where}";
@@ -172,7 +172,7 @@ class QueryBuilder implements IQueryBuilder
     public function getQuery(bool $compile = true): string
     {
         $q = 'SELECT ' . $this->compiler->buildSelectedColumn($this->selectedColumns);
-        $q .= ' FROM ' . $this->getModel()->table() . ' AS ' . $this->compiler->quote($this->getModel()->getAlias());
+        $q .= ' FROM ' . $this->getModel()->table() . ' AS ' . $this->connection->quote($this->getModel()->getAlias());
         if ($where = $this->compiler->buildCondition($this->whereCondition->all())) {
             $q .= " WHERE {$where}";
         }
@@ -501,7 +501,7 @@ class QueryBuilder implements IQueryBuilder
         $duplicates = [];
         foreach ($attributes as $key => $value) {
             if (!($value instanceof IModel) && !$model->isAttributeCount($key)) {
-                $columns[] = $this->compiler->quote($key);
+                $columns[] = $this->connection->quote($key);
                 $params = $this->compiler->makeParams([$value]);
                 $values[] = $params[0];
             }
@@ -530,7 +530,7 @@ class QueryBuilder implements IQueryBuilder
             foreach ($columns as $key => $value) {
                 $arguments[] = "{$value} = {$values[$key]}";
             }
-            $q = 'UPDATE ' . $model->table() . ' AS ' . $this->compiler->quote($model->getAlias()) . ' SET ' . implode(', ', $arguments);
+            $q = 'UPDATE ' . $model->table() . ' AS ' . $this->connection->quote($model->getAlias()) . ' SET ' . implode(', ', $arguments);
             if ($where = $this->compiler->buildCondition($this->whereCondition->all())) {
                 $q .= " WHERE {$where}";
             }
@@ -603,8 +603,8 @@ class QueryBuilder implements IQueryBuilder
             $model->where(function (ICondition $where) use ($name, $keys, $model) {
                 foreach ($keys as $parent => $child) {
                     $columns = [
-                        $this->compiler->quote($name) . '.' . $this->compiler->quote($child),
-                        $this->compiler->quote($this->getModel()->getAlias()) . '.' . $this->compiler->quote($parent),
+                        $model->connection()->quote($name) . '.' . $model->connection()->quote($child),
+                        $this->connection->quote($this->getModel()->getAlias()) . '.' . $this->connection->quote($parent),
                     ];
                     $where->add(new Expression(implode('=', $columns)));
                 }

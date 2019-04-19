@@ -3,6 +3,7 @@
 namespace Viloveul\MySql;
 
 use Viloveul\Database\Contracts\Compiler as ICompiler;
+use Viloveul\Database\Contracts\Connection as IConnection;
 use Viloveul\Database\Contracts\QueryBuilder as IQueryBuilder;
 
 class Compiler implements ICompiler
@@ -13,11 +14,18 @@ class Compiler implements ICompiler
     private $builder;
 
     /**
+     * @var mixed
+     */
+    private $connection;
+
+    /**
+     * @param IConnection   $connection
      * @param IQueryBuilder $builder
      */
-    public function __construct(IQueryBuilder $builder)
+    public function __construct(IConnection $connection, IQueryBuilder $builder)
     {
         $this->builder = $builder;
+        $this->connection = $connection;
     }
 
     /**
@@ -83,9 +91,9 @@ class Compiler implements ICompiler
         } else {
             preg_match_all('~\`([a-zA-Z0-9\_]+)\`~mi', $column, $matches);
             if (array_key_exists(1, $matches) && count($matches[1]) > 0) {
-                return $this->quote(end($matches[1]));
+                return $this->connection->quote(end($matches[1]));
             } else {
-                return $this->quote(preg_replace('/[^a-zA-Z0-9\_\.]+/', '', $column));
+                return $this->connection->quote(preg_replace('/[^a-zA-Z0-9\_\.]+/', '', $column));
             }
         }
     }
@@ -117,7 +125,7 @@ class Compiler implements ICompiler
                 if (count($exploded) === 1) {
                     array_unshift($exploded, $this->builder->getModel()->getAlias());
                 }
-                $parts = array_map([$this, 'quote'], $exploded);
+                $parts = array_map([$this->connection, 'quote'], $exploded);
                 return $match[1] . '(' . implode('.', $parts) . ')';
             }, $column);
         } else {
@@ -125,7 +133,7 @@ class Compiler implements ICompiler
             if (count($exploded) === 1) {
                 array_unshift($exploded, $this->builder->getModel()->getAlias());
             }
-            $parts = array_map([$this, 'quote'], $exploded);
+            $parts = array_map([$this->connection, 'quote'], $exploded);
             return implode('.', $parts);
         }
     }
@@ -148,17 +156,5 @@ class Compiler implements ICompiler
         } else {
             return [];
         }
-    }
-
-    /**
-     * @param  string  $identifier
-     * @return mixed
-     */
-    public function quote(string $identifier): string
-    {
-        if ($identifier === '*') {
-            return $identifier;
-        }
-        return '`' . trim($identifier, '`"') . '`';
     }
 }

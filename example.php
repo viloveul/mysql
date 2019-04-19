@@ -65,16 +65,18 @@ class Role extends Viloveul\Database\Model
 $jos = $db->getConnection()->newSchema('wah');
 $jos->set('id', Viloveul\Database\Contracts\Schema::TYPE_BIGINT)->increment()->unsigned()->primary();
 $jos->set('hhu', Viloveul\Database\Contracts\Schema::TYPE_VARCHAR)->nullable();
+$jos->set('hohoho', Viloveul\Database\Contracts\Schema::TYPE_VARCHAR)->nullable();
 $jos->run();
-// $dor = UserRole::getResultOrCreate(['role_id' => 'fajrul'], ['user_id' => 'jos']);
 
-// dd($dor);
+$dor = UserRole::getResultOrCreate(['role_id' => 'fajrulaz'], ['user_id' => 'jos']);
+
+dd($dor);
 
 $start = microtime(true);
 
-// $ur = User::getResults();
+$ur = User::getResults();
 
-// echo print_r($ur->toArray());
+print_r($ur->toArray());
 
 print_r($db->getConnection()->showLogQueries());
 

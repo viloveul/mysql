@@ -10,6 +10,11 @@ class Schema implements ISchema
     /**
      * @var array
      */
+    private $columnExists = [];
+
+    /**
+     * @var array
+     */
     private $columns = [];
 
     /**
@@ -20,12 +25,12 @@ class Schema implements ISchema
     /**
      * @var array
      */
-    private $exists = [];
+    private $indexes = [];
 
     /**
-     * @var array
+     * @var mixed
      */
-    private $indexes = [];
+    private $isExists = false;
 
     /**
      * @var mixed
@@ -68,8 +73,22 @@ class Schema implements ISchema
             ':sch' => $connection->getDbName(),
         ]);
         while ($col = $c->fetchColumn()) {
-            $this->exists[] = $col;
+            $this->columnExists[] = $col;
         }
+        $q = 'SELECT COUNT(*) FROM `information_schema`.`TABLES` WHERE `TABLE_NAME` = :tab AND `TABLE_SCHEMA` = :sch';
+        $c = $connection->execute($q, [
+            ':tab' => $connection->getPrefix() . $name,
+            ':sch' => $connection->getDbName(),
+        ]);
+        $this->isExists = $c->fetchColumn() > 0;
+    }
+
+    /**
+     * @param string $name
+     */
+    public function hasColumn(string $name): bool
+    {
+        return in_array($name, $this->columnExists);
     }
 
     /**
@@ -87,11 +106,9 @@ class Schema implements ISchema
     public function index(string $column = null): ISchema
     {
         if (empty($column)) {
-            $this->indexes[trim($this->columns[$this->pointer]['name'], '`')] = $this->columns[$this->pointer]['name'];
+            $this->indexes[$this->columns[$this->pointer]['name']] = $this->columns[$this->pointer]['name'];
         } else {
-            $this->indexes[implode('_', func_get_args())] = array_map(function ($c) {
-                return "`{$c}`";
-            }, func_get_args());
+            $this->indexes[implode('_', func_get_args())] = func_get_args();
         }
         return $this;
     }
@@ -117,36 +134,77 @@ class Schema implements ISchema
     public function run()
     {
         $values = [];
-        foreach ($this->columns as $column) {
-            $col = $column['name'] . ' ' . $column['type'] . ' ' . $column['attr'];
-            if ($column['default'] !== null) {
-                $col .= ' ' . $column['default'];
+        if ($this->isExists === false) {
+            foreach ($this->columns as $column) {
+                $col = $this->connection->quote($column['name']) . ' ' . $column['type'] . ' ' . $column['attr'];
+                if ($column['default'] !== null) {
+                    $col .= ' ' . $column['default'];
+                }
+                $values[] = preg_replace('/\s+/', ' ', $col);
             }
-            $values[] = preg_replace('/\s+/', ' ', $col);
-        }
-        if ($this->primaries) {
-            $values[] = 'PRIMARY KEY(' . implode(', ', $this->primaries) . ')';
-        }
-        if ($this->uniques) {
-            foreach ($this->uniques as $k => $unique) {
-                if (is_scalar($unique)) {
-                    $values[] = "UNIQUE KEY `{$this->name}_{$k}_unique` ({$unique})";
-                } else {
-                    $values[] = "UNIQUE KEY `{$this->name}_{$k}_unique` (" . implode(', ', $unique) . ")";
+            if ($this->primaries) {
+                $values[] = 'PRIMARY KEY(' . implode(', ', array_map([$this->connection, 'quote'], $this->primaries)) . ')';
+            }
+            if ($this->uniques) {
+                foreach ($this->uniques as $k => $unique) {
+                    $unq = 'UNIQUE KEY ' . $this->connection->quote("{$this->name}_{$k}_unique");
+                    if (is_scalar($unique)) {
+                        $unq .= ' (' . $this->connection->quote($unique) . ')';
+                    } else {
+                        $unq .= ' (' . implode(', ', array_map([$this->connection, 'quote'], $unique)) . ')';
+                    }
+                    $values[] = $unq;
                 }
             }
-        }
-        if ($this->indexes) {
-            foreach ($this->indexes as $k => $index) {
-                if (is_scalar($index)) {
-                    $values[] = "KEY `{$this->name}_{$k}_index` ({$index})";
-                } else {
-                    $values[] = "KEY `{$this->name}_{$k}_index` (" . implode(', ', $index) . ")";
+            if ($this->indexes) {
+                foreach ($this->indexes as $k => $index) {
+                    $key = 'KEY ' . $this->connection->quote("{$this->name}_{$k}_unique");
+                    if (is_scalar($index)) {
+                        $key .= ' (' . $this->connection->quote($index) . ')';
+                    } else {
+                        $key .= ' (' . implode(', ', array_map([$this->connection, 'quote'], $index)) . ')';
+                    }
+                    $values[] = $key;
                 }
             }
+
+            $q = 'CREATE TABLE {{' . $this->name . '}} (' . implode(',' . PHP_EOL, $values) . ') ENGINE=InnoDB;';
+        } else {
+            foreach ($this->columns as $column) {
+                if (!$this->hasColumn($column['name'])) {
+                    $col = 'ADD COLUMN ' . $this->connection->quote($column['name']) . ' ' . $column['type'] . ' ' . $column['attr'];
+                    if ($column['default'] !== null) {
+                        $col .= ' ' . $column['default'];
+                    }
+                    $values[] = preg_replace('/\s+/', ' ', $col);
+                }
+            }
+            if ($this->uniques) {
+                foreach ($this->uniques as $k => $unique) {
+                    $unq = 'ADD UNIQUE ' . $this->connection->quote("{$this->name}_{$k}_unique");
+                    if (is_scalar($unique)) {
+                        $unq .= ' (' . $this->connection->quote($unique) . ')';
+                    } else {
+                        $unq .= ' (' . implode(', ', array_map([$this->connection, 'quote'], $unique)) . ')';
+                    }
+                    $values[] = $unq;
+                }
+            }
+            if ($this->indexes) {
+                foreach ($this->indexes as $k => $index) {
+                    $key = 'ADD INDEX ' . $this->connection->quote("{$this->name}_{$k}_unique");
+                    if (is_scalar($index)) {
+                        $key .= ' (' . $this->connection->quote($index) . ')';
+                    } else {
+                        $key .= ' (' . implode(', ', array_map([$this->connection, 'quote'], $index)) . ')';
+                    }
+                    $values[] = $key;
+                }
+            }
+            $q = 'ALTER TABLE {{' . $this->name . '}} ' . implode(', ', $values);
         }
-        $q = 'CREATE TABLE IF NOT EXISTS {{ ' . $this->name . ' }} (' . implode(',' . PHP_EOL, $values) . ') ENGINE=InnoDB;';
-        $this->connection->execute($q);
+
+        empty($values) or $this->connection->execute($q);
     }
 
     /**
@@ -157,7 +215,7 @@ class Schema implements ISchema
     public function set(string $name, int $type = ISchema::TYPE_VARCHAR, $lenOrVals = null): ISchema
     {
         $column = [
-            'name' => "`{$name}`",
+            'name' => $name,
             'attr' => "NOT NULL",
             'default' => null,
         ];
@@ -247,11 +305,9 @@ class Schema implements ISchema
     public function unique(string $column = null): ISchema
     {
         if (empty($column)) {
-            $this->uniques[trim($this->columns[$this->pointer]['name'], '`')] = $this->columns[$this->pointer]['name'];
+            $this->uniques[$this->columns[$this->pointer]['name']] = $this->columns[$this->pointer]['name'];
         } else {
-            $this->uniques[implode('_', func_get_args())] = array_map(function ($c) {
-                return "`{$c}`";
-            }, func_get_args());
+            $this->uniques[implode('_', func_get_args())] = func_get_args();
         }
         return $this;
     }

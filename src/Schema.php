@@ -126,7 +126,7 @@ class Schema implements ISchema
      */
     public function nullable(): ISchema
     {
-        $this->columns[$this->pointer]['attr'] = str_replace('NOT NULL', '', $this->columns[$this->pointer]['attr']);
+        $this->columns[$this->pointer]['attr'] = str_replace('NOT NULL', 'NULL', $this->columns[$this->pointer]['attr']);
         return $this;
     }
 
@@ -189,24 +189,28 @@ class Schema implements ISchema
             }
             if ($this->uniques) {
                 foreach ($this->uniques as $k => $unique) {
-                    $unq = 'ADD UNIQUE ' . $this->connection->quote("{$this->name}_{$k}_unique");
-                    if (is_scalar($unique)) {
-                        $unq .= ' (' . $this->connection->quote($unique) . ')';
-                    } else {
-                        $unq .= ' (' . implode(', ', array_map([$this->connection, 'quote'], $unique)) . ')';
+                    if ($this->checkComposite(is_scalar($unique) ? [$unique] : $unique) === false) {
+                        $unq = 'ADD UNIQUE ' . $this->connection->quote("{$this->name}_{$k}_unique");
+                        if (is_scalar($unique)) {
+                            $unq .= ' (' . $this->connection->quote($unique) . ')';
+                        } else {
+                            $unq .= ' (' . implode(', ', array_map([$this->connection, 'quote'], $unique)) . ')';
+                        }
+                        $values[] = $unq;
                     }
-                    $values[] = $unq;
                 }
             }
             if ($this->indexes) {
                 foreach ($this->indexes as $k => $index) {
-                    $key = 'ADD INDEX ' . $this->connection->quote("{$this->name}_{$k}_unique");
-                    if (is_scalar($index)) {
-                        $key .= ' (' . $this->connection->quote($index) . ')';
-                    } else {
-                        $key .= ' (' . implode(', ', array_map([$this->connection, 'quote'], $index)) . ')';
+                    if ($this->checkComposite(is_scalar($unique) ? [$unique] : $unique) === false) {
+                        $key = 'ADD INDEX ' . $this->connection->quote("{$this->name}_{$k}_unique");
+                        if (is_scalar($index)) {
+                            $key .= ' (' . $this->connection->quote($index) . ')';
+                        } else {
+                            $key .= ' (' . implode(', ', array_map([$this->connection, 'quote'], $index)) . ')';
+                        }
+                        $values[] = $key;
                     }
-                    $values[] = $key;
                 }
             }
             $q = 'ALTER TABLE {{' . $this->name . '}} ' . implode(', ', $values);
@@ -327,5 +331,13 @@ class Schema implements ISchema
     {
         $this->columns[$this->pointer]['attr'] = 'UNSIGNED ' . $this->columns[$this->pointer]['attr'];
         return $this;
+    }
+
+    /**
+     * @param array $columns
+     */
+    protected function checkComposite(array $columns): bool
+    {
+        return array_intersect($columns, $this->columnExists) === $columns;
     }
 }

@@ -202,7 +202,7 @@ class Schema implements ISchema
             }
             if ($this->indexes) {
                 foreach ($this->indexes as $k => $index) {
-                    if ($this->checkComposite(is_scalar($unique) ? [$unique] : $unique) === false) {
+                    if ($this->checkComposite(is_scalar($index) ? [$index] : $index) === false) {
                         $key = 'ADD INDEX ' . $this->connection->quote("{$this->name}_{$k}_unique");
                         if (is_scalar($index)) {
                             $key .= ' (' . $this->connection->quote($index) . ')';

@@ -58,14 +58,6 @@ class Schema implements ISchema
     private $uniques = [];
 
     /**
-     * @param $v
-     */
-    function default($v): ISchema{
-        $this->columns[$this->pointer]['default'] = in_array($v, ['NULL', 'CURRENT_TIMESTAMP']) ? $v : "'{$v}'";
-        return $this;
-    }
-
-    /**
      * @param IConnection $connection
      * @param string      $name
      * @param array       $options
@@ -338,6 +330,15 @@ class Schema implements ISchema
     public function unsigned(): ISchema
     {
         $this->columns[$this->pointer]['attr'] = 'UNSIGNED ' . $this->columns[$this->pointer]['attr'];
+        return $this;
+    }
+
+    /**
+     * @param $v
+     */
+    public function withDefault($v): ISchema
+    {
+        $this->columns[$this->pointer]['default'] = in_array($v, ['NULL', 'CURRENT_TIMESTAMP']) ? $v : "'{$v}'";
         return $this;
     }
 

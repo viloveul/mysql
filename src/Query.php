@@ -54,8 +54,9 @@ class Query extends AbstractQuery
      */
     public function count(): int
     {
-        $this->select('count(*)');
-        $query = $this->connection->execute($this->getQuery(false), $this->getParams());
+        $new = clone $this;
+        $new->select('count(*)');
+        $query = $this->connection->execute($new->getQuery(false), $new->getParams());
         return $query->fetchColumn();
     }
 
@@ -402,8 +403,9 @@ class Query extends AbstractQuery
      */
     public function max(string $column)
     {
-        $this->select("max({$column})");
-        $query = $this->connection->execute($this->getQuery(false), $this->getParams());
+        $new = clone $this;
+        $new->select("max({$column})");
+        $query = $this->connection->execute($new->getQuery(false), $new->getParams());
         return $query->fetchColumn();
     }
 
@@ -412,8 +414,9 @@ class Query extends AbstractQuery
      */
     public function min(string $column)
     {
-        $this->select("min({$column})");
-        $query = $this->connection->execute($this->getQuery(false), $this->getParams());
+        $new = clone $this;
+        $new->select("min({$column})");
+        $query = $this->connection->execute($new->getQuery(false), $new->getParams());
         return $query->fetchColumn();
     }
 

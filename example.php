@@ -9,6 +9,11 @@ $db->load();
 
 class RoleChild extends Viloveul\Database\Model
 {
+    public function primary()
+    {
+        return ['role_id', 'child_id'];
+    }
+
     public function relations(): array
     {
         return [
@@ -36,7 +41,7 @@ class Role extends Viloveul\Database\Model
             'childRelations' => [
                 'class' => RoleChild::class,
                 'type' => static::HAS_MANY,
-                'keys' => [
+                'key' => [
                     'id' => 'role_id',
                 ],
             ],
@@ -51,7 +56,7 @@ class Role extends Viloveul\Database\Model
             'childs' => [
                 'class' => __CLASS__,
                 'type' => static::HAS_MANY,
-                'through' => 'subRelations',
+                'through' => 'childRelations',
                 'keys' => [
                     'child_id' => 'id',
                 ],
@@ -75,6 +80,9 @@ class Role extends Viloveul\Database\Model
 // dd($x);
 
 $start = microtime(true);
+
+$dor = Role::where(['id' => '017fb6c4-8cf3-4ee5-9982-01d940632472'])->getResult();
+
 $dor = Role::withCount('childs')->withCount('childRelations')
     ->where(
         ['id' => [

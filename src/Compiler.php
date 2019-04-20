@@ -2,55 +2,11 @@
 
 namespace Viloveul\MySql;
 
-use Viloveul\Database\Contracts\Compiler as ICompiler;
-use Viloveul\Database\Contracts\Connection as IConnection;
-use Viloveul\Database\Contracts\QueryBuilder as IQueryBuilder;
+use Viloveul\Database\Contracts\Query as IQuery;
+use Viloveul\Database\Compiler as AbstractCompiler;
 
-class Compiler implements ICompiler
+class Compiler extends AbstractCompiler
 {
-    /**
-     * @var mixed
-     */
-    private $builder;
-
-    /**
-     * @var mixed
-     */
-    private $connection;
-
-    /**
-     * @param IConnection   $connection
-     * @param IQueryBuilder $builder
-     */
-    public function __construct(IConnection $connection, IQueryBuilder $builder)
-    {
-        $this->builder = $builder;
-        $this->connection = $connection;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function buildCondition(array $conditions): string
-    {
-        $condition = '';
-        foreach ($conditions as $value) {
-            if (!empty($condition)) {
-                $condition .= ' ' . ($value['separator'] === IQueryBuilder::SEPARATOR_AND ? 'AND' : 'OR') . ' ';
-            }
-            $condition .= $value['argument'];
-        }
-        return $condition;
-    }
-
-    /**
-     * @param array $groups
-     */
-    public function buildGroupBy(array $groups): string
-    {
-        return implode(', ', $groups);
-    }
-
     /**
      * @param array $orders
      */
@@ -58,7 +14,7 @@ class Compiler implements ICompiler
     {
         $compiledOrders = [];
         foreach ($orders as $order) {
-            $compiledOrders[] = $order['column'] . ' ' . ($order['sort'] === IQueryBuilder::ORDER_ASC ? 'ASC' : 'DESC');
+            $compiledOrders[] = $order['column'] . ' ' . ($order['sort'] === IQuery::ORDER_ASC ? 'ASC' : 'DESC');
         }
         return implode(', ', $compiledOrders);
     }
@@ -70,11 +26,18 @@ class Compiler implements ICompiler
     {
         $selects = [];
         if (empty($selectedColumns)) {
-            return '*';
+            return $this->connection->quote($this->builder->getModel()->getAlias()) . '.*';
         }
-        if (!in_array('*', $selectedColumns)) {
-            foreach ($selectedColumns as $alias => $select) {
-                $selects[] = ($alias == $select) ? $select : "{$select} AS {$alias}";
+        foreach ($selectedColumns as $alias => $select) {
+            if (strpos($select, '*') !== false && strpos($selects, '(') === false) {
+                $mine = $select;
+            } else {
+                $mine = ($alias == $select) ? $select : "{$select} AS {$alias}";
+            }
+            if (strpos($mine, '(') !== false) {
+                array_unshift($selects, $mine);
+            } else {
+                array_push($selects, $mine);
             }
         }
         return implode(', ', array_unique($selects));
@@ -84,31 +47,27 @@ class Compiler implements ICompiler
      * @param  string  $column
      * @return mixed
      */
-    public function makeColumnAlias(string $column): string
+    public function makeColumnAlias(string $column, string $append = null): string
     {
         if (is_numeric($column)) {
             return $column;
         } else {
             preg_match_all('~\`([a-zA-Z0-9\_]+)\`~mi', $column, $matches);
             if (array_key_exists(1, $matches) && count($matches[1]) > 0) {
-                return $this->connection->quote(end($matches[1]));
+                $new = end($matches[1]);
             } else {
-                return $this->connection->quote(preg_replace('/[^a-zA-Z0-9\_\.]+/', '', $column));
+                $new = preg_replace('/[^a-zA-Z0-9\_\.]+/', '', $column);
             }
+            if (!empty($append)) {
+                // normalize
+                $new = preg_replace('/\_id$/', '', trim($new, '`"'));
+                if (stripos($new, 'id_') === 0) {
+                    $new = substr($new, 3);
+                }
+                $new = $append . '_' . $new;
+            }
+            return $this->connection->quote($new);
         }
-    }
-
-    /**
-     * @param  array   $params
-     * @return mixed
-     */
-    public function makeParams(array $params): array
-    {
-        $binds = [];
-        foreach ($params as $value) {
-            $binds[] = $this->builder->addParam($value);
-        }
-        return $binds;
     }
 
     /**
@@ -120,41 +79,21 @@ class Compiler implements ICompiler
         if (is_numeric($column)) {
             return $column;
         } elseif (strpos($column, '(') !== false && strpos($column, ')') !== false) {
-            return preg_replace_callback('#(\w+)\(([a-zA-Z0-9\_\.\`\"]+)\)#', function ($match) {
+            return preg_replace_callback('#(\w+)\(([a-zA-Z0-9\_\.\`\"\*]+)\)#', function ($match) {
                 $exploded = explode('.', $match[2]);
-                if (count($exploded) === 1) {
+                if (count($exploded) === 1 && strpos($match[2], '*') === false) {
                     array_unshift($exploded, $this->builder->getModel()->getAlias());
                 }
                 $parts = array_map([$this->connection, 'quote'], $exploded);
                 return $match[1] . '(' . implode('.', $parts) . ')';
             }, $column);
         } else {
-            $exploded = explode('.', $column);
+            $exploded = explode('.', preg_replace('/[^a-zA-Z0-9\.\_\*]+/', '', $column));
             if (count($exploded) === 1) {
                 array_unshift($exploded, $this->builder->getModel()->getAlias());
             }
             $parts = array_map([$this->connection, 'quote'], $exploded);
             return implode('.', $parts);
-        }
-    }
-
-    /**
-     * @param  string  $name
-     * @param  array   $relations
-     * @return mixed
-     */
-    public function parseRelations(string $name, array $relations): array
-    {
-        if (array_key_exists($name, $relations)) {
-            $relation = $relations[$name];
-            $def = ['type' => null, 'class' => null, 'through' => null, 'keys' => [], 'use' => null];
-            $resolve = [];
-            foreach ($def as $key => $value) {
-                $resolve[] = array_key_exists($key, $relation) ? $relation[$key] : $value;
-            }
-            return $resolve;
-        } else {
-            return [];
         }
     }
 }

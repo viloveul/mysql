@@ -2,7 +2,6 @@
 
 namespace Viloveul\MySql;
 
-use Viloveul\MySql\Compiler;
 use InvalidArgumentException;
 use Viloveul\Database\Expression;
 use Viloveul\Database\Contracts\Query as IQuery;
@@ -32,7 +31,7 @@ class Condition extends AbstractCondition
             $whereConditions = $this->conditions;
             $this->clear();
             $expression($this);
-            if ($compiled = $this->compiler->buildCondition($this->conditions)) {
+            if ($compiled = $this->query->getCompiler()->buildCondition($this->conditions)) {
                 array_push($whereConditions, [
                     'separator' => $separator,
                     'argument' => '(' . $compiled . ')',
@@ -57,8 +56,8 @@ class Condition extends AbstractCondition
      */
     protected function parse(string $column, $value, int $operator): string
     {
-        $column = $this->compiler->normalizeColumn($column);
-        $params = $this->compiler->makeParams(is_scalar($value) ? [$value] : ((array) $value));
+        $column = $this->query->getCompiler()->normalizeColumn($column);
+        $params = $this->query->getCompiler()->makeParams(is_scalar($value) ? [$value] : ((array) $value));
         switch ($operator) {
             case IQuery::OPERATOR_RANGE:
             case IQuery::OPERATOR_BEETWEN:

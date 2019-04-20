@@ -4,7 +4,6 @@ namespace Viloveul\MySql;
 
 use Closure;
 use Exception;
-use Viloveul\MySql\Compiler;
 use Viloveul\Database\Collection;
 use Viloveul\Database\Expression;
 use Viloveul\Database\Query as AbstractQuery;
@@ -21,11 +20,6 @@ class Query extends AbstractQuery
     protected $bindParams = [];
 
     /**
-     * @var mixed
-     */
-    protected $connection;
-
-    /**
      * @var array
      */
     protected $groups = [];
@@ -33,27 +27,7 @@ class Query extends AbstractQuery
     /**
      * @var array
      */
-    protected $havingCondition;
-
-    /**
-     * @var array
-     */
     protected $joins = [];
-
-    /**
-     * @var array
-     */
-    protected $mapThroughConditions = [];
-
-    /**
-     * @var mixed
-     */
-    protected $model;
-
-    /**
-     * @var array
-     */
-    protected $modelRelations = [];
 
     /**
      * @var mixed
@@ -68,43 +42,12 @@ class Query extends AbstractQuery
     /**
      * @var array
      */
-    protected $relations = [];
-
-    /**
-     * @var array
-     */
     protected $selectedColumns = [];
 
     /**
      * @var mixed
      */
     protected $size = 0;
-
-    /**
-     * @var mixed
-     */
-    protected $table;
-
-    /**
-     * @var array
-     */
-    protected $whereCondition;
-
-    /**
-     * @var array
-     */
-    protected $withCounts = [];
-
-    /**
-     * @param  $value
-     * @return mixed
-     */
-    public function addParam($value): string
-    {
-        $key = ':bind_' . $this->getModel()->getAlias() . '_' . count($this->bindParams);
-        $this->bindParams[$key] = $value;
-        return $key;
-    }
 
     /**
      * @return mixed
@@ -128,7 +71,7 @@ class Query extends AbstractQuery
         }
         $alias = $this->connection->quote($model->getAlias());
         $q = 'DELETE FROM ' . $alias . ' USING ' . $model->table() . ' AS ' . $alias;
-        if ($where = $this->compiler->buildCondition($this->whereCondition->all())) {
+        if ($where = $this->getCompiler()->buildCondition($this->whereCondition->all())) {
             $q .= " WHERE {$where}";
         }
 
@@ -145,23 +88,23 @@ class Query extends AbstractQuery
      */
     public function getQuery(bool $compile = true): string
     {
-        $q = 'SELECT ' . $this->compiler->buildSelectedColumn($this->selectedColumns);
+        $q = 'SELECT ' . $this->getCompiler()->buildSelectedColumn($this->selectedColumns);
         $q .= ' FROM ' . $this->getModel()->table() . ' AS ' . $this->connection->quote($this->getModel()->getAlias());
 
         if (count($this->joins) > 0) {
             $q .= ' ' . implode(' ', $this->joins);
         }
 
-        if ($where = $this->compiler->buildCondition($this->whereCondition->all())) {
+        if ($where = $this->getCompiler()->buildCondition($this->whereCondition->all())) {
             $q .= " WHERE {$where}";
         }
-        if ($groups = $this->compiler->buildGroupBy($this->groups)) {
+        if ($groups = $this->getCompiler()->buildGroupBy($this->groups)) {
             $q .= ' GROUP BY ' . $groups;
         }
-        if ($having = $this->compiler->buildCondition($this->havingCondition->all())) {
+        if ($having = $this->getCompiler()->buildCondition($this->havingCondition->all())) {
             $q .= " HAVING {$having}";
         }
-        if ($order = $this->compiler->buildOrderBy($this->orders)) {
+        if ($order = $this->getCompiler()->buildOrderBy($this->orders)) {
             $q .= ' ORDER BY ' . $order;
         }
         if ($this->size > 0) {
@@ -181,7 +124,7 @@ class Query extends AbstractQuery
         if ($result = $query->fetch()) {
             $model = clone $this->getModel();
             $model->setAttributes($result);
-            foreach ($this->relations as $name => $callback) {
+            foreach ($this->withRelations as $name => $callback) {
                 if (is_callable($callback)) {
                     $model->load($name, $callback);
                 } else {
@@ -189,7 +132,7 @@ class Query extends AbstractQuery
                 }
             }
             foreach ($this->withCounts as $name => $callback) {
-                if ($rel = $this->compiler->parseRelations($name, $model->relations())) {
+                if ($rel = $this->getCompiler()->parseRelations($name, $model->relations())) {
                     [$type, $class, $through, $keys, $use] = $rel;
                     $child = new $class();
                     if ($through !== null) {
@@ -202,18 +145,15 @@ class Query extends AbstractQuery
                         }
                     });
 
+                    is_callable($use) and $use($child);
+                    is_callable($callback) and $callback($child);
+
                     $newKeys = [];
                     foreach ($keys as $key => $fk) {
                         $n = $child->getCompiler()->makeColumnAlias($fk, 'pivot_relation');
                         $child->select($fk, $n);
+                        $child->groupBy($fk);
                         $newKeys[$key] = trim($n, '`"');
-                    }
-
-                    is_callable($use) and $use($child);
-                    is_callable($callback) and $callback($child);
-
-                    foreach ($newKeys as $key) {
-                        $child->groupBy($key);
                     }
 
                     $model->setAttributes([
@@ -270,8 +210,8 @@ class Query extends AbstractQuery
                 $results[] = $row;
             }
         }
-        foreach ($this->relations as $name => $relation) {
-            if ($rel = $this->compiler->parseRelations($name, $this->getModel()->relations())) {
+        foreach ($this->withRelations as $name => $relation) {
+            if ($rel = $this->getCompiler()->parseRelations($name, $this->getModel()->relations())) {
                 [$type, $class, $through, $keys, $use] = $rel;
                 $model = new $class();
                 $model->setAlias($name);
@@ -310,7 +250,7 @@ class Query extends AbstractQuery
 
         $counts = [];
         foreach ($this->withCounts as $name => $relation) {
-            if ($rel = $this->compiler->parseRelations($name, $this->getModel()->relations())) {
+            if ($rel = $this->getCompiler()->parseRelations($name, $this->getModel()->relations())) {
                 [$type, $class, $through, $keys, $use] = $rel;
                 $model = new $class();
                 $model->select('count(*)', 'count');
@@ -337,7 +277,7 @@ class Query extends AbstractQuery
                     $n = $model->getCompiler()->makeColumnAlias($fk, 'pivot_relation');
                     $newKeys[$key] = trim($n, '`"');
                     $model->select($fk, $n);
-                    $model->groupBy($n);
+                    $model->groupBy($fk);
                 }
 
                 $query = $model->connection()->execute($model->getQuery(false), $model->getParams());
@@ -381,7 +321,7 @@ class Query extends AbstractQuery
      */
     public function groupBy(string $column): IQuery
     {
-        $str = $this->compiler->normalizeColumn($column);
+        $str = $this->getCompiler()->normalizeColumn($column);
         $split = explode('.', $str);
         $this->groups[] = end($split);
         return $this;
@@ -416,7 +356,7 @@ class Query extends AbstractQuery
         array $throughs = []
     ): IQuery{
         $relations = count($throughs) > 0 ? $throughs : $this->getModel()->relations();
-        if ($rel = $this->compiler->parseRelations($name, $relations)) {
+        if ($rel = $this->getCompiler()->parseRelations($name, $relations)) {
             [$type, $class, $through, $keys, $use] = $rel;
             if (empty($conditions)) {
                 $conditions = $keys;
@@ -434,7 +374,7 @@ class Query extends AbstractQuery
                     $this->mapThroughConditions[$key] = $sub->getCompiler()->normalizeColumn($value);
                 }
                 if ($through !== null) {
-                    if ($subrel = $this->compiler->parseRelations($through, $relations)) {
+                    if ($subrel = $this->getCompiler()->parseRelations($through, $relations)) {
                         [$subtype, $subclass, $subthrough, $subkeys, $subuse] = $subrel;
                         $this->join($through, $this->mapThroughConditions, 'inner', $relations);
                     }
@@ -482,10 +422,8 @@ class Query extends AbstractQuery
      * @param  int           $operator
      * @return mixed
      */
-    public function orWhere(
-        $expression,
-        int $operator = IQuery::OPERATOR_EQUAL
-    ): IQuery {
+    public function orWhere($expression, int $operator = IQuery::OPERATOR_EQUAL): IQuery
+    {
         return $this->where($expression, $operator, IQuery::SEPARATOR_OR);
     }
 
@@ -507,7 +445,7 @@ class Query extends AbstractQuery
     public function orderBy(string $column, int $sort = IQuery::ORDER_ASC): IQuery
     {
         $this->orders[] = [
-            'column' => $this->compiler->normalizeColumn($column),
+            'column' => $this->getCompiler()->normalizeColumn($column),
             'sort' => $sort,
         ];
         return $this;
@@ -526,7 +464,7 @@ class Query extends AbstractQuery
         foreach ($attributes as $key => $value) {
             if (!($value instanceof IModel) && !$model->isAttributeCount($key)) {
                 $columns[] = $this->connection->quote($key);
-                $params = $this->compiler->makeParams([$value]);
+                $params = $this->getCompiler()->makeParams([$value]);
                 $values[] = $params[0];
             }
         }
@@ -555,7 +493,7 @@ class Query extends AbstractQuery
                 $arguments[] = "{$value} = {$values[$key]}";
             }
             $q = 'UPDATE ' . $model->table() . ' AS ' . $this->connection->quote($model->getAlias()) . ' SET ' . implode(', ', $arguments);
-            if ($where = $this->compiler->buildCondition($this->whereCondition->all())) {
+            if ($where = $this->getCompiler()->buildCondition($this->whereCondition->all())) {
                 $q .= " WHERE {$where}";
             }
         }
@@ -579,8 +517,8 @@ class Query extends AbstractQuery
      */
     public function select(string $column, string $alias = null): IQuery
     {
-        $column = $this->compiler->normalizeColumn($column);
-        $alias = $this->compiler->makeColumnAlias($alias ? $alias : $column);
+        $column = $this->getCompiler()->normalizeColumn($column);
+        $alias = $this->getCompiler()->makeColumnAlias($alias ? $alias : $column);
         $this->selectedColumns[$alias] = $column;
         return $this;
     }
@@ -611,7 +549,7 @@ class Query extends AbstractQuery
         Closure $callback = null,
         int $separator = IQuery::SEPARATOR_AND
     ): IQuery {
-        if ($relation = $this->compiler->parseRelations($name, $this->getModel()->relations())) {
+        if ($relation = $this->getCompiler()->parseRelations($name, $this->getModel()->relations())) {
             [$type, $class, $through, $keys, $use] = $relation;
             $model = new $class();
             $model->setAlias($name);

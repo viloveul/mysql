@@ -146,19 +146,19 @@ class Connection extends AbstractConnection
     }
 
     /**
-     * @param IQuery $builder
+     * @param IQuery $query
      */
-    public function newCompiler(IQuery $builder): ICompiler
+    public function newCompiler(IQuery $query): ICompiler
     {
-        return new Compiler($this, $builder);
+        return new Compiler($this, $query);
     }
 
     /**
-     * @param ICompiler $compiler
+     * @param IQuery $query
      */
-    public function newCondition(ICompiler $compiler): ICondition
+    public function newCondition(IQuery $query): ICondition
     {
-        return new Condition($compiler);
+        return new Condition($query);
     }
 
     /**

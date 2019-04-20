@@ -7,21 +7,16 @@ $db = Viloveul\Database\DatabaseFactory::instance([
 ]);
 $db->load();
 
-class User extends Viloveul\Database\Model
+class RoleChild extends Viloveul\Database\Model
 {
-    public function afterFind(): void
-    {
-        $this->abc = 'def';
-    }
-
     public function relations(): array
     {
         return [
-            'uroles' => [
-                'class' => UserRole::class,
+            'childs' => [
+                'class' => Role::class,
                 'type' => static::HAS_MANY,
                 'keys' => [
-                    'id' => 'user_id',
+                    'child_id' => 'id',
                 ],
             ],
         ];
@@ -29,56 +24,83 @@ class User extends Viloveul\Database\Model
 
     public function table(): string
     {
-        return '{{ user }}';
-    }
-}
-
-class UserRole extends Viloveul\Database\Model
-{
-    /**
-     * @var array
-     */
-    protected $protects = [
-        // 'user_id',
-        'role_id',
-    ];
-
-    public function primary()
-    {
-        return ['user_id', 'role_id'];
-    }
-
-    public function table(): string
-    {
-        return '{{ user_role }}';
+        return '{{ role_child }}';
     }
 }
 
 class Role extends Viloveul\Database\Model
 {
+    public function relations(): array
+    {
+        return [
+            'childRelations' => [
+                'class' => RoleChild::class,
+                'type' => static::HAS_MANY,
+                'keys' => [
+                    'id' => 'role_id',
+                ],
+            ],
+            'subRelations' => [
+                'class' => RoleChild::class,
+                'type' => static::HAS_MANY,
+                'through' => 'childRelations',
+                'keys' => [
+                    'child_id' => 'role_id',
+                ],
+            ],
+            'childs' => [
+                'class' => __CLASS__,
+                'type' => static::HAS_MANY,
+                'through' => 'subRelations',
+                'keys' => [
+                    'child_id' => 'id',
+                ],
+            ],
+        ];
+    }
+
     public function table(): string
     {
         return '{{ role }}';
     }
 }
 
-$jos = $db->getConnection()->newSchema('wah');
-$jos->set('id', Viloveul\Database\Contracts\Schema::TYPE_BIGINT)->increment()->unsigned()->primary();
-$jos->set('hhu', Viloveul\Database\Contracts\Schema::TYPE_VARCHAR)->nullable();
-$jos->set('hohoho', Viloveul\Database\Contracts\Schema::TYPE_VARCHAR)->nullable();
-$jos->run();
+// $jos = $db->getConnection()->newSchema('wah');
+// $jos->set('id', Viloveul\Database\Contracts\Schema::TYPE_BIGINT)->increment()->unsigned()->primary();
+// $jos->set('hhu', Viloveul\Database\Contracts\Schema::TYPE_VARCHAR)->nullable();
+// $jos->set('hohoho', Viloveul\Database\Contracts\Schema::TYPE_VARCHAR)->nullable();
+// $jos->run();
 
-$dor = UserRole::getResultOrCreate(['role_id' => 'fajrulaz'], ['user_id' => 'jos']);
-
-dd($dor);
+// $x = RoleChild::join('childs', ['id' => 'role_id'], 'right')->getQuery();
+// dd($x);
 
 $start = microtime(true);
+$dor = Role::withCount('childs')->withCount('childRelations')
+    ->where(
+        ['id' => [
+            '017fb6c4-8cf3-4ee5-9982-01d940632472',
+            '0eec0533-c7d9-4783-9a9b-5772fff2d786',
+        ]],
+        Viloveul\Database\Contracts\Query::OPERATOR_IN
+    )
+    ->getResults();
 
-$ur = User::getResults();
+dump($dor->toArray());
+// exit;
+// //     // dd($dor);
+// // foreach ($dor as $key => $value) {
+// //     dump($value->name, $value->childs);
+// // }
 
-print_r($ur->toArray());
+// $u = Role::withCount('childs')->getResult();
+// dd($u);
 
 print_r($db->getConnection()->showLogQueries());
+// exit;
+
+// $ur = User::getResults();
+
+// print_r($ur->toArray());
 
 echo memory_get_usage() . PHP_EOL;
 

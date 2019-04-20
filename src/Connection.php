@@ -4,45 +4,25 @@ namespace Viloveul\MySql;
 
 use PDO;
 use PDOException;
+use Viloveul\MySql\Query;
 use Viloveul\MySql\Schema;
 use Viloveul\MySql\Compiler;
 use Viloveul\MySql\Condition;
-use Viloveul\MySql\QueryBuilder;
 use Viloveul\Database\QueryException;
 use Viloveul\Database\ConnectionException;
 use Viloveul\Database\Contracts\Model as IModel;
+use Viloveul\Database\Contracts\Query as IQuery;
 use Viloveul\Database\Contracts\Schema as ISchema;
 use Viloveul\Database\Contracts\Compiler as ICompiler;
+use Viloveul\Database\Connection as AbstractConnection;
 use Viloveul\Database\Contracts\Condition as ICondition;
-use Viloveul\Database\Contracts\Connection as IConnection;
-use Viloveul\Database\Contracts\QueryBuilder as IQueryBuilder;
 
-class Connection implements IConnection
+class Connection extends AbstractConnection
 {
     /**
      * @var mixed
      */
     protected $pdo = null;
-
-    /**
-     * @var mixed
-     */
-    protected $prefix;
-
-    /**
-     * @var mixed
-     */
-    private $host;
-
-    /**
-     * @var array
-     */
-    private $logs = [];
-
-    /**
-     * @var mixed
-     */
-    private $name;
 
     /**
      * @var array
@@ -53,11 +33,6 @@ class Connection implements IConnection
      * @var mixed
      */
     private $password;
-
-    /**
-     * @var mixed
-     */
-    private $port;
 
     /**
      * @var mixed
@@ -157,38 +132,6 @@ class Connection implements IConnection
     /**
      * @return mixed
      */
-    public function getDbHost(): string
-    {
-        return $this->host;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getDbName(): string
-    {
-        return $this->name;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getDbPort(): string
-    {
-        return $this->port;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getPrefix(): string
-    {
-        return $this->prefix;
-    }
-
-    /**
-     * @return mixed
-     */
     public function inTransaction(): bool
     {
         return $this->pdo->inTransaction();
@@ -203,9 +146,9 @@ class Connection implements IConnection
     }
 
     /**
-     * @param IQueryBuilder $builder
+     * @param IQuery $builder
      */
-    public function newCompiler(IQueryBuilder $builder): ICompiler
+    public function newCompiler(IQuery $builder): ICompiler
     {
         return new Compiler($this, $builder);
     }
@@ -221,9 +164,9 @@ class Connection implements IConnection
     /**
      * @param IModel $model
      */
-    public function newQueryBuilder(): IQueryBuilder
+    public function newQuery(): IQuery
     {
-        return new QueryBuilder($this);
+        return new Query($this);
     }
 
     /**
@@ -268,14 +211,6 @@ class Connection implements IConnection
             return $this->pdo->rollback();
         }
         return false;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function showLogQueries(): array
-    {
-        return $this->logs;
     }
 
     /**

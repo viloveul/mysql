@@ -5,31 +5,12 @@ namespace Viloveul\MySql;
 use Viloveul\MySql\Compiler;
 use InvalidArgumentException;
 use Viloveul\Database\Expression;
-use Viloveul\Database\Contracts\Compiler as ICompiler;
-use Viloveul\Database\Contracts\Condition as ICondition;
+use Viloveul\Database\Contracts\Query as IQuery;
+use Viloveul\Database\Condition as AbstractCondition;
 use Viloveul\Database\Contracts\Expression as IExpression;
-use Viloveul\Database\Contracts\QueryBuilder as IQueryBuilder;
 
-class Condition implements ICondition
+class Condition extends AbstractCondition
 {
-    /**
-     * @var mixed
-     */
-    protected $compiler;
-
-    /**
-     * @var array
-     */
-    protected $conditions = [];
-
-    /**
-     * @param ICompiler $compiler
-     */
-    public function __construct(ICompiler $compiler)
-    {
-        $this->compiler = $compiler;
-    }
-
     /**
      * @param $expression
      * @param int           $operator
@@ -37,8 +18,8 @@ class Condition implements ICondition
      */
     public function add(
         $expression,
-        int $operator = IQueryBuilder::OPERATOR_EQUAL,
-        int $separator = IQueryBuilder::SEPARATOR_AND
+        int $operator = IQuery::OPERATOR_EQUAL,
+        int $separator = IQuery::SEPARATOR_AND
     ): void {
         if (is_array($expression)) {
             foreach ($expression as $column => $value) {
@@ -70,31 +51,6 @@ class Condition implements ICondition
     }
 
     /**
-     * @return mixed
-     */
-    public function all(): array
-    {
-        return $this->conditions;
-    }
-
-    public function clear(): void
-    {
-        foreach ($this->conditions as $key => $value) {
-            $this->conditions[$key] = null;
-            unset($this->conditions[$key]);
-        }
-        $this->conditions = [];
-    }
-
-    /**
-     * @param array $condition
-     */
-    public function push(array $condition): void
-    {
-        $this->conditions[] = $condition;
-    }
-
-    /**
      * @param string   $column
      * @param $value
      * @param int      $operator
@@ -104,40 +60,40 @@ class Condition implements ICondition
         $column = $this->compiler->normalizeColumn($column);
         $params = $this->compiler->makeParams(is_scalar($value) ? [$value] : ((array) $value));
         switch ($operator) {
-            case IQueryBuilder::OPERATOR_RANGE:
-            case IQueryBuilder::OPERATOR_BEETWEN:
+            case IQuery::OPERATOR_RANGE:
+            case IQuery::OPERATOR_BEETWEN:
                 $first = array_shift($params);
                 $last = isset($params[0]) ? $params[0] : $first;
-                if ($operator === IQueryBuilder::OPERATOR_RANGE) {
+                if ($operator === IQuery::OPERATOR_RANGE) {
                     $argument = "({$column} >= {$first} AND {$column} <= $last)";
                 } else {
                     $argument = "({$column} BEETWEN {$first} AND $last)";
                 }
                 break;
 
-            case IQueryBuilder::OPERATOR_LIKE:
+            case IQuery::OPERATOR_LIKE:
                 $argument = "{$column} LIKE {$params[0]}";
                 break;
-            case IQueryBuilder::OPERATOR_EQUAL:
+            case IQuery::OPERATOR_EQUAL:
                 $argument = "{$column} = {$params[0]}";
                 break;
-            case IQueryBuilder::OPERATOR_GT:
+            case IQuery::OPERATOR_GT:
                 $argument = "{$column} > {$params[0]}";
                 break;
-            case IQueryBuilder::OPERATOR_LT:
+            case IQuery::OPERATOR_LT:
                 $argument = "{$column} < {$params[0]}";
                 break;
-            case IQueryBuilder::OPERATOR_GTE:
+            case IQuery::OPERATOR_GTE:
                 $argument = "{$column} >= {$params[0]}";
                 break;
-            case IQueryBuilder::OPERATOR_LTE:
+            case IQuery::OPERATOR_LTE:
                 $argument = "{$column} <= {$params[0]}";
                 break;
 
-            case IQueryBuilder::OPERATOR_IN:
-            case IQueryBuilder::OPERATOR_NOT_IN:
+            case IQuery::OPERATOR_IN:
+            case IQuery::OPERATOR_NOT_IN:
             default:
-                $op = $operator === IQueryBuilder::OPERATOR_NOT_IN ? 'NOT IN' : 'IN';
+                $op = $operator === IQuery::OPERATOR_NOT_IN ? 'NOT IN' : 'IN';
                 $cond = implode(', ', $params);
                 $argument = "{$column} {$op} ({$cond})";
                 break;

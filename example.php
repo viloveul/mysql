@@ -135,12 +135,7 @@ class Role extends Viloveul\Database\Model
 
 $start = microtime(true);
 
-$dor = Role::where(['id' => '7c5c46a0-8122-4ab2-986a-2591806a412e'])->getResult();
-$dor->sync(
-    'childRelations',
-    ['073fc32d-cf97-404d-939d-b652f2f195fa', '077f968e-d85e-4249-a028-dcfbed7c832c'],
-    Viloveul\Database\Contracts\Query::SYNC_DETACH
-);
+$dor = Role::select(['id'])->with('childs')->whereHas('childs')->getResult();
 
 dump($dor);
 // exit;

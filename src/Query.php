@@ -687,15 +687,21 @@ class Query extends AbstractQuery
     }
 
     /**
-     * @param  string  $column
-     * @param  string  $alias
+     * @param  $column
+     * @param  string    $alias
      * @return mixed
      */
-    public function select(string $column, string $alias = null): IQuery
+    public function select($column, string $alias = null): IQuery
     {
-        $column = $this->getConnection()->makeNormalizeColumn($column, $this->getModel()->getAlias());
-        $alias = $this->getConnection()->makeAliasColumn($alias ? $alias : $column);
-        $this->selects[$alias] = $column;
+        if (!is_scalar($column)) {
+            foreach ($column as $key => $value) {
+                $this->select($value, is_numeric($key) ? $key : null);
+            }
+        } else {
+            $column = $this->getConnection()->makeNormalizeColumn($column, $this->getModel()->getAlias());
+            $alias = $this->getConnection()->makeAliasColumn($alias ? $alias : $column);
+            $this->selects[$alias] = $column;
+        }
         return $this;
     }
 

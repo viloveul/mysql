@@ -184,7 +184,7 @@ class Connection extends AbstractConnection
         if (is_numeric($column)) {
             return $column;
         } elseif (strpos($column, '(') !== false && strpos($column, ')') !== false) {
-            return preg_replace_callback('#(\w+)\(([a-zA-Z0-9\_\.\`\"\*]+)\)#', function ($match, $table) {
+            return preg_replace_callback('#(\w+)\(([a-zA-Z0-9\_\.\`\"\*]+)\)#', function ($match) use ($table) {
                 $exploded = explode('.', $match[2]);
                 if (count($exploded) === 1 && strpos($match[2], '*') === false && !empty($table)) {
                     array_unshift($exploded, $table);

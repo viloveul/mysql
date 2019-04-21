@@ -1,5 +1,8 @@
 <?php
 
+error_reporting(-1);
+ini_set('display_errors', 'On');
+
 require __DIR__ . '/vendor/autoload.php';
 
 $db = Viloveul\Database\DatabaseFactory::instance([
@@ -30,6 +33,42 @@ class RoleChild extends Viloveul\Database\Model
     public function table(): string
     {
         return '{{ role_child }}';
+    }
+}
+
+class UserRole extends Viloveul\Database\Model
+{
+    public function relations(): array
+    {
+        return [
+            'roles' => [
+                'class' => Role::class,
+                'type' => static::HAS_MANY,
+                'keys' => [
+                    'role_id' => 'id',
+                ],
+            ],
+            'users' => [
+                'class' => User::class,
+                'type' => static::HAS_MANY,
+                'keys' => [
+                    'user_id' => 'id',
+                ],
+            ],
+        ];
+    }
+
+    public function table(): string
+    {
+        return '{{ user_role }}';
+    }
+}
+
+class User extends Viloveul\Database\Model
+{
+    public function table(): string
+    {
+        return '{{ user }}';
     }
 }
 
@@ -70,6 +109,21 @@ class Role extends Viloveul\Database\Model
     }
 }
 
+// $r = Role::newInstance();
+// $r->setAttributes([
+//     'name' => 'fajrulaz',
+//     'type' => 'b',
+//     'id' => mt_rand()
+// ]);
+// $r->save();
+
+// dd($r->toArray());
+
+// // $db->getConnection()->transaction();
+// // $ur = RoleChild::where(['child_id' => '00296529-1877-43c4-ae7c-31d5f0e8df95'])->getResult();
+// // $ur->role_id = '00296529-1877-43c4-ae7c-31d5f0e8df90';
+// dd($ur);
+
 // $jos = $db->getConnection()->newSchema('wah');
 // $jos->set('id', Viloveul\Database\Contracts\Schema::TYPE_BIGINT)->increment()->unsigned()->primary();
 // $jos->set('hhu', Viloveul\Database\Contracts\Schema::TYPE_VARCHAR)->nullable();
@@ -81,17 +135,7 @@ class Role extends Viloveul\Database\Model
 
 $start = microtime(true);
 
-$dor = Role::where(['id' => '017fb6c4-8cf3-4ee5-9982-01d940632472'])->getResult();
-
-$dor = Role::withCount('childs')->withCount('childRelations')
-    ->where(
-        ['id' => [
-            '017fb6c4-8cf3-4ee5-9982-01d940632472',
-            '0eec0533-c7d9-4783-9a9b-5772fff2d786',
-        ]],
-        Viloveul\Database\Contracts\Query::OPERATOR_IN
-    )
-    ->getResults();
+$dor = Role::getResult();
 
 dump($dor->toArray());
 // exit;

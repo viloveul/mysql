@@ -6,16 +6,12 @@ use PDO;
 use PDOException;
 use Viloveul\MySql\Query;
 use Viloveul\MySql\Schema;
-use Viloveul\MySql\Compiler;
-use Viloveul\MySql\Condition;
 use Viloveul\Database\QueryException;
 use Viloveul\Database\ConnectionException;
 use Viloveul\Database\Contracts\Model as IModel;
 use Viloveul\Database\Contracts\Query as IQuery;
 use Viloveul\Database\Contracts\Schema as ISchema;
-use Viloveul\Database\Contracts\Compiler as ICompiler;
 use Viloveul\Database\Connection as AbstractConnection;
-use Viloveul\Database\Contracts\Condition as ICondition;
 
 class Connection extends AbstractConnection
 {
@@ -69,7 +65,6 @@ class Connection extends AbstractConnection
     public function __destruct()
     {
         $this->disconnect();
-        $this->logs = [];
     }
 
     /**
@@ -90,6 +85,7 @@ class Connection extends AbstractConnection
             $this->pdo = new PDO($dsn, $this->username, $this->password);
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            $this->pdo->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, false);
             foreach ($this->options as $key => $value) {
                 $this->pdo->setAttribute($key, $value);
             }
@@ -117,12 +113,9 @@ class Connection extends AbstractConnection
     {
         try {
             $compiled = $this->prepare($query);
+            $this->addLogQuery($compiled, $params);
             $query = $this->pdo->prepare($compiled);
             $query->execute($params);
-            $this->logs[] = [
-                'query' => $compiled,
-                'params' => $params,
-            ];
             return $query;
         } catch (PDOException $e) {
             throw new QueryException($e->getMessage());
@@ -146,19 +139,67 @@ class Connection extends AbstractConnection
     }
 
     /**
-     * @param IQuery $query
+     * @param  string  $name
+     * @return mixed
      */
-    public function newCompiler(IQuery $query): ICompiler
+    public function lastInsertedValue(string $name = null)
     {
-        return new Compiler($this, $query);
+        return $this->pdo->lastInsertId($name);
     }
 
     /**
-     * @param IQuery $query
+     * @param  string  $column
+     * @return mixed
      */
-    public function newCondition(IQuery $query): ICondition
+    public function makeAliasColumn(string $column, string $append = null): string
     {
-        return new Condition($query);
+        if (is_numeric($column)) {
+            return $column;
+        } else {
+            preg_match_all('~\`([a-zA-Z0-9\_]+)\`~mi', $column, $matches);
+            if (array_key_exists(1, $matches) && count($matches[1]) > 0) {
+                $new = end($matches[1]);
+            } else {
+                $new = preg_replace('/[^a-zA-Z0-9\_\.]+/', '', $column);
+            }
+            if (!empty($append)) {
+                // normalize
+                $new = preg_replace('/\_id$/', '', trim($new, '`"'));
+                if (stripos($new, 'id_') === 0) {
+                    $new = substr($new, 3);
+                }
+                $new = $append . '_' . $new;
+            }
+            return $this->quote($new);
+        }
+    }
+
+    /**
+     * @param  string  $column
+     * @param  string  $table
+     * @return mixed
+     */
+    public function makeNormalizeColumn(string $column, string $table = null): string
+    {
+        if (is_numeric($column)) {
+            return $column;
+        } elseif (strpos($column, '(') !== false && strpos($column, ')') !== false) {
+            return preg_replace_callback('#(\w+)\(([a-zA-Z0-9\_\.\`\"\*]+)\)#', function ($match, $table) {
+                $exploded = explode('.', $match[2]);
+                if (count($exploded) === 1 && strpos($match[2], '*') === false && !empty($table)) {
+                    array_unshift($exploded, $table);
+                }
+                $parts = array_map([$this, 'quote'], $exploded);
+                return $match[1] . '(' . implode('.', $parts) . ')';
+            }, $column);
+        } else {
+            $exploded = explode('.', preg_replace('/[^a-zA-Z0-9\.\_\*]+/', '', $column));
+            if (count($exploded) === 1 && !empty($table)) {
+                array_unshift($exploded, $table);
+            }
+            $parts = array_map([$this, 'quote'], $exploded);
+            return implode('.', $parts);
+        }
     }
 
     /**
@@ -166,7 +207,10 @@ class Connection extends AbstractConnection
      */
     public function newQuery(): IQuery
     {
-        return new Query($this);
+        $query = new Query();
+        $query->setConnection($this);
+        $query->initialize();
+        return $query;
     }
 
     /**
@@ -175,7 +219,10 @@ class Connection extends AbstractConnection
      */
     public function newSchema(string $name, array $options = []): ISchema
     {
-        return new Schema($this, $name, $options);
+        $schema = new Schema($name, $options);
+        $schema->setConnection($this);
+        $schema->initialize();
+        return $schema;
     }
 
     /**

@@ -117,7 +117,7 @@ class Query extends AbstractQuery
     {
         $compiledOrders = [];
         foreach ($this->orders as $order) {
-            $compiledOrders[] = $order['column'] . ' ' . ($order['sort'] === IQuery::ORDER_ASC ? 'ASC' : 'DESC');
+            $compiledOrders[] = $order['column'] . ' ' . ($order['sort'] === IQuery::SORT_ASC ? 'ASC' : 'DESC');
         }
         return implode(', ', $compiledOrders);
     }
@@ -579,7 +579,7 @@ class Query extends AbstractQuery
      * @param  int     $sort
      * @return mixed
      */
-    public function orderBy(string $column, int $sort = IQuery::ORDER_ASC): IQuery
+    public function orderBy(string $column, int $sort = IQuery::SORT_ASC): IQuery
     {
         $this->orders[] = [
             'column' => $this->getConnection()->makeNormalizeColumn($column),
@@ -697,6 +697,79 @@ class Query extends AbstractQuery
         $alias = $this->getConnection()->makeAliasColumn($alias ? $alias : $column);
         $this->selects[$alias] = $column;
         return $this;
+    }
+
+    /**
+     * @param string $name
+     * @param array  $values
+     * @param int    $mode
+     */
+    public function sync(string $name, array $values, int $mode = IQuery::SYNC_BOTH): void
+    {
+        $model = $this->getModel();
+        if ($relation = $this->parseRelations($name, $model->relations())) {
+            [$type, $class, $through, $keys, $use] = $relation;
+            $top = new $class();
+            $subpri = false;
+            $maps = [];
+            foreach ($keys as $pk => $fk) {
+                $maps[$fk] = $model->{$pk};
+            }
+            $subpris = array_filter((array) $top->primary(), function ($v) use ($maps) {
+                return !array_key_exists($v, $maps);
+            });
+            $subpri = end($subpris);
+            if ($mode !== IQuery::SYNC_ATTACH) {
+                $top->where($maps);
+                if (!empty($values)) {
+                    if ($mode === IQuery::SYNC_BOTH) {
+                        $top->where([$subpri => $values], IQuery::OPERATOR_NOT_IN);
+                    } else {
+                        $top->where([$subpri => $values], IQuery::OPERATOR_IN);
+                    }
+                }
+                $top->delete();
+                $top->resetState();
+            }
+
+            if ($mode !== IQuery::SYNC_DETACH && !empty($values)) {
+                $model->load($name);
+                $objectCurrents = $model->{$name};
+                $currents = [];
+                if ($objectCurrents !== null) {
+                    foreach ($objectCurrents as $osub) {
+                        $currents[] = $osub->{$subpri};
+                    }
+                }
+                $topParams = $top->makeParams($maps);
+                $sqlParams = $topParams;
+                $sqlValues = [];
+                $sqlColumns = [];
+                foreach ($keys as $key) {
+                    $sqlColumns[] = $top->getConnection()->quote($key);
+                }
+                $sqlColumns[] = $top->getConnection()->quote($subpri);
+                foreach ($values as $value) {
+                    if (!in_array($value, $currents)) {
+                        $params = $top->makeParams([$value]);
+                        $sqlValues[] = '(' . implode(', ', array_merge($topParams, $params)) . ')';
+                        $sqlParams[] = $params[0];
+                    }
+                }
+                try {
+                    if (!empty($sqlValues)) {
+                        $sql = 'INSERT INTO ' . $top->table();
+                        $sql .= ' (' . implode(', ', $sqlColumns) . ') ';
+                        $sql .= 'VALUES ' . implode(', ', $sqlValues);
+                        $top->getConnection()->execute($sql, $top->getParams());
+                    }
+                } catch (Exception $e) {
+                    throw $e;
+                }
+            }
+            $model->resetState();
+            $top->resetState();
+        }
     }
 
     /**

@@ -135,7 +135,7 @@ class Role extends Viloveul\Database\Model
 
 $start = microtime(true);
 
-$dor = Role::select('id')->withCount('childs')->getResults()->toArray();
+$dor = Role::select('id')->with('childs')->getResults();
 
 dump($dor);
 // exit;

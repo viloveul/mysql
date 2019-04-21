@@ -71,6 +71,7 @@ class Query extends AbstractQuery
     public function count(): int
     {
         $new = clone $this;
+        $new->selects = [];
         $new->select('count(*)');
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
         return $query->fetchColumn();
@@ -528,6 +529,7 @@ class Query extends AbstractQuery
     public function max(string $column)
     {
         $new = clone $this;
+        $new->selects = [];
         $new->select("max({$column})");
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
         return $query->fetchColumn();
@@ -539,6 +541,7 @@ class Query extends AbstractQuery
     public function min(string $column)
     {
         $new = clone $this;
+        $new->selects = [];
         $new->select("min({$column})");
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
         return $query->fetchColumn();
@@ -695,7 +698,7 @@ class Query extends AbstractQuery
     {
         if (!is_scalar($column)) {
             foreach ($column as $key => $value) {
-                $this->select($value, is_numeric($key) ? $key : null);
+                $this->select($value, is_numeric($key) ? null : $key);
             }
         } else {
             $column = $this->getConnection()->makeNormalizeColumn($column, $this->getModel()->getAlias());

@@ -132,7 +132,7 @@ class Query extends AbstractQuery
             return $this->getConnection()->quote($this->getModel()->getAlias()) . '.*';
         }
         foreach ($this->selects as $alias => $select) {
-            if (strpos($select, '*') !== false && strpos($selects, '(') === false) {
+            if (strpos($select, '*') !== false && strpos($select, '(') === false) {
                 $mine = $select;
             } else {
                 $mine = ($alias == $select) ? $select : "{$select} AS {$alias}";

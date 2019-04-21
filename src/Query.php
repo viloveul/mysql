@@ -132,7 +132,7 @@ class Query extends AbstractQuery
             return $this->getConnection()->quote($this->getModel()->getAlias()) . '.*';
         }
         foreach ($this->selects as $alias => $select) {
-            if (strpos($select, '*') !== false && strpos($selects, '(') === false) {
+            if (strpos($select, '*') !== false && strpos($select, '(') === false) {
                 $mine = $select;
             } else {
                 $mine = ($alias == $select) ? $select : "{$select} AS {$alias}";
@@ -233,7 +233,7 @@ class Query extends AbstractQuery
                     foreach ($keys as $key => $fk) {
                         $n = $child->getConnection()->makeAliasColumn($fk, 'pivot_relation');
                         $child->select($fk, $n);
-                        $child->groupBy($fk);
+                        $child->groupBy($n);
                         $newKeys[$key] = trim($n, '`"');
                     }
 
@@ -339,7 +339,7 @@ class Query extends AbstractQuery
                     $n = $model->getConnection()->makeAliasColumn($fk, 'pivot_relation');
                     $newKeys[$key] = trim($n, '`"');
                     $model->select($fk, $n);
-                    $model->groupBy($fk);
+                    $model->groupBy($n);
                 }
 
                 $query = $model->connection()->execute($model->getQuery(false), $model->getParams());
@@ -441,13 +441,13 @@ class Query extends AbstractQuery
             $sub->setAlias($name);
             $params = [];
             foreach ($conditions as $pk => $fk) {
-                $params[] = $sub->getConnection()->makeNormalizeColumn($pk, $name) . ' = ' . $this->getConnection()->makeNormalizeColumn($fk);
+                $params[] = $sub->getConnection()->makeNormalizeColumn($pk, $name) . ' = ' . $this->getConnection()->makeNormalizeColumn($fk, $this->getModel()->getAlias());
             }
             $this->joins[] = strtoupper($joinType) . ' JOIN ' . $sub->table() . ' AS ' . $this->getConnection()->quote($name) . ' ON ' . implode(' AND ', $params);
             if (count($throughs) > 0) {
                 $this->mappedThroughConditions = [];
                 foreach ($keys as $key => $value) {
-                    $this->mappedThroughConditions[$key] = $sub->getConnection()->makeNormalizeColumn($value);
+                    $this->mappedThroughConditions[$key] = $sub->getConnection()->makeNormalizeColumn($value, $name);
                 }
                 if ($through !== null) {
                     if ($subrel = $this->parseRelations($through, $relations)) {

@@ -31,7 +31,7 @@ class Condition extends AbstractCondition
             $whereConditions = $this->conditions;
             $this->clear();
             $expression($this);
-            if ($compiled = $this->query->getCompiler()->buildCondition($this->conditions)) {
+            if ($compiled = $this->getCompiled()) {
                 array_push($whereConditions, [
                     'separator' => $separator,
                     'argument' => '(' . $compiled . ')',
@@ -50,14 +50,29 @@ class Condition extends AbstractCondition
     }
 
     /**
+     * @return mixed
+     */
+    public function getCompiled(): string
+    {
+        $condition = '';
+        foreach ($this->conditions as $value) {
+            if (!empty($condition)) {
+                $condition .= ' ' . ($value['separator'] === IQuery::SEPARATOR_AND ? 'AND' : 'OR') . ' ';
+            }
+            $condition .= $value['argument'];
+        }
+        return $condition;
+    }
+
+    /**
      * @param string   $column
      * @param $value
      * @param int      $operator
      */
     protected function parse(string $column, $value, int $operator): string
     {
-        $column = $this->query->getCompiler()->normalizeColumn($column);
-        $params = $this->query->getCompiler()->makeParams(is_scalar($value) ? [$value] : ((array) $value));
+        $column = $this->getQuery()->getConnection()->makeNormalizeColumn($column);
+        $params = $this->getQuery()->makeParams(is_scalar($value) ? [$value] : ((array) $value));
         switch ($operator) {
             case IQuery::OPERATOR_RANGE:
             case IQuery::OPERATOR_BEETWEN:

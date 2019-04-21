@@ -58,29 +58,21 @@ class Schema implements ISchema
     private $uniques = [];
 
     /**
-     * @param IConnection $connection
-     * @param string      $name
-     * @param array       $options
+     * @param string $name
+     * @param array  $options
      */
-    public function __construct(IConnection $connection, string $name, array $options = [])
+    public function __construct(string $name, array $options = [])
     {
-        $this->connection = $connection;
         $this->name = $name;
         $this->options = $options;
-        $q = 'SELECT `COLUMN_NAME` FROM `information_schema`.`COLUMNS` WHERE `TABLE_NAME` = :tab AND `TABLE_SCHEMA` = :sch';
-        $c = $connection->execute($q, [
-            ':tab' => $connection->getPrefix() . $name,
-            ':sch' => $connection->getDbName(),
-        ]);
-        while ($col = $c->fetchColumn()) {
-            $this->columnExists[] = $col;
-        }
-        $q = 'SELECT COUNT(*) FROM `information_schema`.`TABLES` WHERE `TABLE_NAME` = :tab AND `TABLE_SCHEMA` = :sch';
-        $c = $connection->execute($q, [
-            ':tab' => $connection->getPrefix() . $name,
-            ':sch' => $connection->getDbName(),
-        ]);
-        $this->isExists = $c->fetchColumn() > 0;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getConnection(): IConnection
+    {
+        return $this->connection;
     }
 
     /**
@@ -111,6 +103,32 @@ class Schema implements ISchema
             $this->indexes[implode('_', func_get_args())] = func_get_args();
         }
         return $this;
+    }
+
+    public function initialize(): void
+    {
+        $q = 'SELECT `COLUMN_NAME` FROM `information_schema`.`COLUMNS` WHERE `TABLE_NAME` = :tab AND `TABLE_SCHEMA` = :sch';
+        $c = $this->connection->execute($q, [
+            ':tab' => $this->connection->getPrefix() . $this->name,
+            ':sch' => $this->connection->getDbName(),
+        ]);
+        while ($col = $c->fetchColumn()) {
+            $this->columnExists[] = $col;
+        }
+        $q = 'SELECT COUNT(*) FROM `information_schema`.`TABLES` WHERE `TABLE_NAME` = :tab AND `TABLE_SCHEMA` = :sch';
+        $c = $this->connection->execute($q, [
+            ':tab' => $this->connection->getPrefix() . $this->name,
+            ':sch' => $this->connection->getDbName(),
+        ]);
+        $this->isExists = $c->fetchColumn() > 0;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function listColumnExists(): array
+    {
+        return $this->columnExists;
     }
 
     /**
@@ -189,7 +207,7 @@ class Schema implements ISchema
             }
             if ($this->uniques) {
                 foreach ($this->uniques as $k => $unique) {
-                    if ($this->checkComposite(is_scalar($unique) ? [$unique] : $unique) === false) {
+                    if ($this->keyIsExists(is_scalar($unique) ? [$unique] : $unique) === false) {
                         $unq = 'ADD UNIQUE ' . $this->connection->quote("{$this->name}_{$k}_unique");
                         if (is_scalar($unique)) {
                             $unq .= ' (' . $this->connection->quote($unique) . ')';
@@ -202,7 +220,7 @@ class Schema implements ISchema
             }
             if ($this->indexes) {
                 foreach ($this->indexes as $k => $index) {
-                    if ($this->checkComposite(is_scalar($index) ? [$index] : $index) === false) {
+                    if ($this->keyIsExists(is_scalar($index) ? [$index] : $index) === false) {
                         $key = 'ADD INDEX ' . $this->connection->quote("{$this->name}_{$k}_index");
                         if (is_scalar($index)) {
                             $key .= ' (' . $this->connection->quote($index) . ')';
@@ -311,6 +329,14 @@ class Schema implements ISchema
     }
 
     /**
+     * @param IConnection $connection
+     */
+    public function setConnection(IConnection $connection): void
+    {
+        $this->connection = $connection;
+    }
+
+    /**
      * @param  string  $column
      * @return mixed
      */
@@ -345,7 +371,7 @@ class Schema implements ISchema
     /**
      * @param array $columns
      */
-    protected function checkComposite(array $columns): bool
+    protected function keyIsExists(array $columns): bool
     {
         return array_intersect($columns, $this->columnExists) === $columns;
     }

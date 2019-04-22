@@ -71,8 +71,8 @@ class Query extends AbstractQuery
     public function count(): int
     {
         $new = clone $this;
-        $new->selects = [];
         $new->select('count(*)');
+        $new->usingAggregate();
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
         return $query->fetchColumn();
     }
@@ -529,8 +529,8 @@ class Query extends AbstractQuery
     public function max(string $column)
     {
         $new = clone $this;
-        $new->selects = [];
         $new->select("max({$column})");
+        $new->usingAggregate();
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
         return $query->fetchColumn();
     }
@@ -541,8 +541,8 @@ class Query extends AbstractQuery
     public function min(string $column)
     {
         $new = clone $this;
-        $new->selects = [];
         $new->select("min({$column})");
+        $new->usingAggregate();
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
         return $query->fetchColumn();
     }
@@ -787,6 +787,28 @@ class Query extends AbstractQuery
     public function throughConditions(): array
     {
         return $this->mappedThroughConditions;
+    }
+
+    public function usingAggregate(): void
+    {
+        $selects = [];
+        $remaps = [];
+        foreach ($this->selects as $key => $value) {
+            if (strpos($key, '(') === false && strpos($value, '(') === false) {
+                $remaps[$key] = $value;
+            } else {
+                $selects[$key] = $value;
+            }
+        }
+
+        if (count($this->groups) > 0) {
+            foreach ($remaps as $key => $value) {
+                if (array_intersect([$key, $value], $this->groups) !== []) {
+                    $selects[$key] = $value;
+                }
+            }
+        }
+        $this->selects = $selects;
     }
 
     /**

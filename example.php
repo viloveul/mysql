@@ -6,7 +6,7 @@ ini_set('display_errors', 'On');
 require __DIR__ . '/vendor/autoload.php';
 
 $db = Viloveul\Database\DatabaseFactory::instance([
-    'default' => new Viloveul\MySql\Connection('dev', 'something', 'viloveul_cms', '127.0.0.1', 3306, 'tbl_'),
+    'default' => new Viloveul\MySql\Connection('dev', 'something', 'sample', '127.0.0.1', 3306, 'tbl_'),
 ]);
 $db->load();
 
@@ -105,7 +105,7 @@ class Role extends Viloveul\Database\Model
 
     public function table(): string
     {
-        return '{{ role }}';
+        return '{{ pegawai }}';
     }
 }
 
@@ -135,7 +135,7 @@ class Role extends Viloveul\Database\Model
 
 $start = microtime(true);
 
-$dor = Role::select('id')->with('childs')->getResults();
+$dor = Role::select('id')->groupBy('id')->count();
 
 dump($dor);
 // exit;

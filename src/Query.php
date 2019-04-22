@@ -258,6 +258,7 @@ class Query extends AbstractQuery
     public function getResults(): ICollection
     {
         $maps = [];
+        $counts = [];
         $relations = [];
         $this->getModel()->beforeFind();
         $query = $this->getConnection()->execute(
@@ -273,90 +274,92 @@ class Query extends AbstractQuery
                 $results[] = $row;
             }
         }
-        foreach ($this->withRelations as $name => $relation) {
-            if ($rel = $this->parseRelations($name, $this->getModel()->relations())) {
-                [$type, $class, $through, $keys, $use] = $rel;
-                $model = new $class();
-                $model->setAlias($name);
-                $model->select($name . '.*');
-                if ($through !== null) {
-                    $model->join($through, $keys, 'inner', $this->getModel()->relations());
-                    $keys = $model->throughConditions();
-                }
-                $model->where(function ($where) use ($keys, $results, &$maps) {
-                    foreach ($keys as $pk => $fk) {
-                        if (!array_key_exists($pk, $maps)) {
-                            $maps[$pk] = array_map(function ($m) use ($pk) {
-                                return $m[$pk];
-                            }, $results);
+
+        if (count($results) > 0) {
+            foreach ($this->withRelations as $name => $relation) {
+                if ($rel = $this->parseRelations($name, $this->getModel()->relations())) {
+                    [$type, $class, $through, $keys, $use] = $rel;
+                    $model = new $class();
+                    $model->setAlias($name);
+                    $model->select($name . '.*');
+                    if ($through !== null) {
+                        $model->join($through, $keys, 'inner', $this->getModel()->relations());
+                        $keys = $model->throughConditions();
+                    }
+                    $model->where(function ($where) use ($keys, $results, &$maps) {
+                        foreach ($keys as $pk => $fk) {
+                            if (!array_key_exists($pk, $maps)) {
+                                $maps[$pk] = array_map(function ($m) use ($pk) {
+                                    return $m[$pk];
+                                }, $results);
+                            }
+                            $where->add([$fk => $maps[$pk]], IQuery::OPERATOR_IN);
                         }
-                        $where->add([$fk => $maps[$pk]], IQuery::OPERATOR_IN);
+                    });
+                    $newKeys = [];
+                    foreach ($keys as $key => $fk) {
+                        $n = $model->getConnection()->makeAliasColumn($fk, 'pivot_relation');
+                        $model->select($fk, $n);
+                        $newKeys[$key] = trim($n, '`"');
                     }
-                });
-                $newKeys = [];
-                foreach ($keys as $key => $fk) {
-                    $n = $model->getConnection()->makeAliasColumn($fk, 'pivot_relation');
-                    $model->select($fk, $n);
-                    $newKeys[$key] = trim($n, '`"');
-                }
 
-                is_callable($use) and $use($model);
-                is_callable($relation) and $relation($model);
+                    is_callable($use) and $use($model);
+                    is_callable($relation) and $relation($model);
 
-                $relations[$name] = [
-                    'maps' => $newKeys,
-                    'type' => $type,
-                    'values' => $model->getResults(),
-                ];
-            }
-        }
-
-        $counts = [];
-        foreach ($this->withCounts as $name => $relation) {
-            if ($rel = $this->parseRelations($name, $this->getModel()->relations())) {
-                [$type, $class, $through, $keys, $use] = $rel;
-                $model = new $class();
-                $model->select('count(*)', 'count');
-                if ($through !== null) {
-                    $model->join($through, $keys, 'inner', $this->getModel()->relations());
-                    $keys = $model->throughConditions();
-                }
-                $model->where(function ($where) use ($keys, $results, &$maps) {
-                    foreach ($keys as $pk => $fk) {
-                        if (!array_key_exists($pk, $maps)) {
-                            $maps[$pk] = array_map(function ($m) use ($pk) {
-                                return $m[$pk];
-                            }, $results);
-                        }
-                        $where->add([$fk => $maps[$pk]], IQuery::OPERATOR_IN);
-                    }
-                });
-
-                is_callable($use) and $use($model);
-                is_callable($relation) and $relation($model);
-
-                $newKeys = [];
-                foreach ($keys as $key => $fk) {
-                    $n = $model->getConnection()->makeAliasColumn($fk, 'pivot_relation');
-                    $newKeys[$key] = trim($n, '`"');
-                    $model->select($fk, $n);
-                    $model->groupBy($n);
-                }
-
-                $query = $model->connection()->execute($model->getQuery(false), $model->getParams());
-                $resultCounts = [];
-                while ($c = $query->fetch()) {
-                    $k = '';
-                    foreach ($newKeys as $key) {
-                        $k .= $c[$key];
-                    }
-                    $resultCounts[] = [
-                        'value' => $c['count'],
-                        'identifier' => $k,
-                        'keys' => array_keys($keys),
+                    $relations[$name] = [
+                        'maps' => $newKeys,
+                        'type' => $type,
+                        'values' => $model->getResults(),
                     ];
                 }
-                $counts[$name] = $resultCounts;
+            }
+
+            foreach ($this->withCounts as $name => $relation) {
+                if ($rel = $this->parseRelations($name, $this->getModel()->relations())) {
+                    [$type, $class, $through, $keys, $use] = $rel;
+                    $model = new $class();
+                    $model->select('count(*)', 'count');
+                    if ($through !== null) {
+                        $model->join($through, $keys, 'inner', $this->getModel()->relations());
+                        $keys = $model->throughConditions();
+                    }
+                    $model->where(function ($where) use ($keys, $results, &$maps) {
+                        foreach ($keys as $pk => $fk) {
+                            if (!array_key_exists($pk, $maps)) {
+                                $maps[$pk] = array_map(function ($m) use ($pk) {
+                                    return $m[$pk];
+                                }, $results);
+                            }
+                            $where->add([$fk => $maps[$pk]], IQuery::OPERATOR_IN);
+                        }
+                    });
+
+                    is_callable($use) and $use($model);
+                    is_callable($relation) and $relation($model);
+
+                    $newKeys = [];
+                    foreach ($keys as $key => $fk) {
+                        $n = $model->getConnection()->makeAliasColumn($fk, 'pivot_relation');
+                        $newKeys[$key] = trim($n, '`"');
+                        $model->select($fk, $n);
+                        $model->groupBy($n);
+                    }
+
+                    $query = $model->connection()->execute($model->getQuery(false), $model->getParams());
+                    $resultCounts = [];
+                    while ($c = $query->fetch()) {
+                        $k = '';
+                        foreach ($newKeys as $key) {
+                            $k .= $c[$key];
+                        }
+                        $resultCounts[] = [
+                            'value' => $c['count'],
+                            'identifier' => $k,
+                            'keys' => array_keys($keys),
+                        ];
+                    }
+                    $counts[$name] = $resultCounts;
+                }
             }
         }
 

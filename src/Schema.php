@@ -112,7 +112,7 @@ class Schema implements ISchema
             ':tab' => $this->connection->getPrefix() . $this->name,
             ':sch' => $this->connection->getDbName(),
         ]);
-        while ($col = $c->fetchColumn()) {
+        while ($col = $c->fetchScalar()) {
             $this->columnExists[] = $col;
         }
         $q = 'SELECT COUNT(*) FROM `information_schema`.`TABLES` WHERE `TABLE_NAME` = :tab AND `TABLE_SCHEMA` = :sch';
@@ -120,7 +120,7 @@ class Schema implements ISchema
             ':tab' => $this->connection->getPrefix() . $this->name,
             ':sch' => $this->connection->getDbName(),
         ]);
-        $this->isExists = $c->fetchColumn() > 0;
+        $this->isExists = $c->fetchScalar() > 0;
     }
 
     /**

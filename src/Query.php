@@ -74,7 +74,7 @@ class Query extends AbstractQuery
         $new->select('count(*)');
         $new->usingAggregate();
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
-        return $query->fetchScalar();
+        return $query->fetchScalar(0, 0);
     }
 
     public function delete()

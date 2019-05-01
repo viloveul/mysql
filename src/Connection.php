@@ -5,11 +5,13 @@ namespace Viloveul\MySql;
 use PDO;
 use PDOException;
 use Viloveul\MySql\Query;
+use Viloveul\MySql\Result;
 use Viloveul\MySql\Schema;
 use Viloveul\Database\QueryException;
 use Viloveul\Database\ConnectionException;
 use Viloveul\Database\Contracts\Model as IModel;
 use Viloveul\Database\Contracts\Query as IQuery;
+use Viloveul\Database\Contracts\Result as IResult;
 use Viloveul\Database\Contracts\Schema as ISchema;
 use Viloveul\Database\Connection as AbstractConnection;
 
@@ -109,14 +111,14 @@ class Connection extends AbstractConnection
      * @param  array   $params
      * @return mixed
      */
-    public function execute(string $query, array $params = [])
+    public function execute(string $query, array $params = []): IResult
     {
         try {
             $compiled = $this->prepare($query);
             $this->addLogQuery($compiled, $params);
             $query = $this->pdo->prepare($compiled);
             $query->execute($params);
-            return $query;
+            return new Result($query);
         } catch (PDOException $e) {
             throw new QueryException($e->getMessage());
         }

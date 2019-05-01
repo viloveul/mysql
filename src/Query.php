@@ -74,7 +74,7 @@ class Query extends AbstractQuery
         $new->select('count(*)');
         $new->usingAggregate();
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
-        return $query->fetchColumn();
+        return $query->fetchScalar();
     }
 
     public function delete()
@@ -203,7 +203,7 @@ class Query extends AbstractQuery
         $new->limit(1, 0);
         $new->getModel()->beforeFind();
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
-        if ($result = $query->fetch()) {
+        if ($result = $query->fetchOne()) {
             $model = clone $this->getModel();
             $model->setAttributes($result);
             foreach ($this->withRelations as $name => $callback) {
@@ -261,19 +261,8 @@ class Query extends AbstractQuery
         $counts = [];
         $relations = [];
         $this->getModel()->beforeFind();
-        $query = $this->getConnection()->execute(
-            $this->getQuery(false),
-            $this->getParams()
-        );
-
-        if (method_exists($query, 'fetchAll')) {
-            $results = $query->fetchAll();
-        } else {
-            $results = [];
-            while ($row = $query->fetch()) {
-                $results[] = $row;
-            }
-        }
+        $query = $this->getConnection()->execute($this->getQuery(false), $this->getParams());
+        $results = $query->fetchAll();
 
         if (count($results) > 0) {
             foreach ($this->withRelations as $name => $relation) {
@@ -347,7 +336,7 @@ class Query extends AbstractQuery
 
                     $query = $model->connection()->execute($model->getQuery(false), $model->getParams());
                     $resultCounts = [];
-                    while ($c = $query->fetch()) {
+                    while ($c = $query->fetchOne()) {
                         $k = '';
                         foreach ($newKeys as $key) {
                             $k .= $c[$key];
@@ -389,9 +378,8 @@ class Query extends AbstractQuery
     {
         $new = clone $this;
         $new->limit(1, 0);
-        $new->getModel()->beforeFind();
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
-        $result = $query->fetch();
+        $result = $query->fetchOne();
         return array_key_exists($column, $result) ? $result[$column] : $default;
     }
 
@@ -535,7 +523,7 @@ class Query extends AbstractQuery
         $new->select("max({$column})");
         $new->usingAggregate();
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
-        return $query->fetchColumn();
+        return $query->fetchScalar();
     }
 
     /**
@@ -547,7 +535,7 @@ class Query extends AbstractQuery
         $new->select("min({$column})");
         $new->usingAggregate();
         $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
-        return $query->fetchColumn();
+        return $query->fetchScalar();
     }
 
     /**

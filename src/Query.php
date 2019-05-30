@@ -101,6 +101,182 @@ class Query extends AbstractQuery
         }
     }
 
+    /**
+     * @return mixed
+     */
+    public function find()
+    {
+        $new = clone $this;
+        $new->limit(1, 0);
+        $new->getModel()->beforeFind();
+        $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
+        if ($result = $query->fetchOne()) {
+            $model = clone $this->getModel();
+            $model->setAttributes($result);
+            foreach ($this->withRelations as $name => $callback) {
+                if (is_callable($callback)) {
+                    $model->load($name, $callback);
+                } else {
+                    $model->load($name);
+                }
+            }
+            foreach ($this->withCounts as $name => $callback) {
+                if ($rel = $this->parseRelations($name, $model->relations())) {
+                    [$type, $class, $through, $keys, $use] = $rel;
+                    $child = new $class();
+                    if ($through !== null) {
+                        $child->join($through, $keys, 'inner', $model->relations());
+                        $keys = $child->throughConditions();
+                    }
+                    $child->where(function ($where) use ($keys, $result, &$maps) {
+                        foreach ($keys as $pk => $fk) {
+                            $where->add([$fk => $result[$pk]], IQuery::OPERATOR_IN);
+                        }
+                    });
+
+                    is_callable($use) and $use($child);
+                    is_callable($callback) and $callback($child);
+
+                    $newKeys = [];
+                    foreach ($keys as $key => $fk) {
+                        $n = $child->getConnection()->makeAliasColumn($fk, 'pivot_relation');
+                        $child->select($fk, $n);
+                        $child->groupBy($n);
+                        $newKeys[$key] = trim($n, '`"');
+                    }
+
+                    $model->setAttributes([
+                        "count_{$name}" => $child->count(),
+                    ]);
+
+                    $child->resetState();
+                }
+            }
+            $model->afterFind();
+            return $model;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * @return mixed
+     */
+    public function findAll(): ICollection
+    {
+        $maps = [];
+        $counts = [];
+        $relations = [];
+        $this->getModel()->beforeFind();
+        $query = $this->getConnection()->execute($this->getQuery(false), $this->getParams());
+        $results = $query->fetchAll();
+
+        if (count($results) > 0) {
+            foreach ($this->withRelations as $name => $relation) {
+                if ($rel = $this->parseRelations($name, $this->getModel()->relations())) {
+                    [$type, $class, $through, $keys, $use] = $rel;
+                    $model = new $class();
+                    $model->setAlias($name);
+                    $model->select($name . '.*');
+                    if ($through !== null) {
+                        $model->join($through, $keys, 'inner', $this->getModel()->relations());
+                        $keys = $model->throughConditions();
+                    }
+                    $model->where(function ($where) use ($keys, $results, &$maps) {
+                        foreach ($keys as $pk => $fk) {
+                            if (!array_key_exists($pk, $maps)) {
+                                $maps[$pk] = array_map(function ($m) use ($pk) {
+                                    return $m[$pk];
+                                }, $results);
+                            }
+                            $where->add([$fk => $maps[$pk]], IQuery::OPERATOR_IN);
+                        }
+                    });
+                    $newKeys = [];
+                    foreach ($keys as $key => $fk) {
+                        $n = $model->getConnection()->makeAliasColumn($fk, 'pivot_relation');
+                        $model->select($fk, $n);
+                        $newKeys[$key] = trim($n, '`"');
+                    }
+
+                    is_callable($use) and $use($model);
+                    is_callable($relation) and $relation($model);
+
+                    $relations[$name] = [
+                        'maps' => $newKeys,
+                        'type' => $type,
+                        'values' => $model->findAll(),
+                    ];
+                }
+            }
+
+            foreach ($this->withCounts as $name => $relation) {
+                if ($rel = $this->parseRelations($name, $this->getModel()->relations())) {
+                    [$type, $class, $through, $keys, $use] = $rel;
+                    $model = new $class();
+                    $model->select('count(*)', 'count');
+                    if ($through !== null) {
+                        $model->join($through, $keys, 'inner', $this->getModel()->relations());
+                        $keys = $model->throughConditions();
+                    }
+                    $model->where(function ($where) use ($keys, $results, &$maps) {
+                        foreach ($keys as $pk => $fk) {
+                            if (!array_key_exists($pk, $maps)) {
+                                $maps[$pk] = array_map(function ($m) use ($pk) {
+                                    return $m[$pk];
+                                }, $results);
+                            }
+                            $where->add([$fk => $maps[$pk]], IQuery::OPERATOR_IN);
+                        }
+                    });
+
+                    is_callable($use) and $use($model);
+                    is_callable($relation) and $relation($model);
+
+                    $newKeys = [];
+                    foreach ($keys as $key => $fk) {
+                        $n = $model->getConnection()->makeAliasColumn($fk, 'pivot_relation');
+                        $newKeys[$key] = trim($n, '`"');
+                        $model->select($fk, $n);
+                        $model->groupBy($n);
+                    }
+
+                    $query = $model->connection()->execute($model->getQuery(false), $model->getParams());
+                    $resultCounts = [];
+                    while ($c = $query->fetchOne()) {
+                        $k = '';
+                        foreach ($newKeys as $key) {
+                            $k .= $c[$key];
+                        }
+                        $resultCounts[] = [
+                            'value' => $c['count'],
+                            'identifier' => $k,
+                            'keys' => array_keys($keys),
+                        ];
+                    }
+                    $counts[$name] = $resultCounts;
+                }
+            }
+        }
+
+        $finalResults = array_map(function ($result) use ($counts) {
+            foreach ($counts as $name => $c) {
+                foreach ($c as $row) {
+                    $k = '';
+                    foreach ($row['keys'] as $key) {
+                        $k .= $result[$key];
+                    }
+                    if ($row['identifier'] === $k) {
+                        $result['count_' . $name] = $row['value'];
+                    }
+                }
+            }
+            return $result;
+        }, $results);
+
+        return new Collection($this->getModel(), $finalResults, $relations);
+    }
+
     public function getCompiledGroupBy(): string
     {
         return implode(', ', $this->groups);
@@ -192,195 +368,6 @@ class Query extends AbstractQuery
             $q .= ' LIMIT ' . $this->size . ' OFFSET ' . abs($this->offset);
         }
         return $compile ? $this->getConnection()->prepare($q) : $q;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getResult()
-    {
-        $new = clone $this;
-        $new->limit(1, 0);
-        $new->getModel()->beforeFind();
-        $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
-        if ($result = $query->fetchOne()) {
-            $model = clone $this->getModel();
-            $model->setAttributes($result);
-            foreach ($this->withRelations as $name => $callback) {
-                if (is_callable($callback)) {
-                    $model->load($name, $callback);
-                } else {
-                    $model->load($name);
-                }
-            }
-            foreach ($this->withCounts as $name => $callback) {
-                if ($rel = $this->parseRelations($name, $model->relations())) {
-                    [$type, $class, $through, $keys, $use] = $rel;
-                    $child = new $class();
-                    if ($through !== null) {
-                        $child->join($through, $keys, 'inner', $model->relations());
-                        $keys = $child->throughConditions();
-                    }
-                    $child->where(function ($where) use ($keys, $result, &$maps) {
-                        foreach ($keys as $pk => $fk) {
-                            $where->add([$fk => $result[$pk]], IQuery::OPERATOR_IN);
-                        }
-                    });
-
-                    is_callable($use) and $use($child);
-                    is_callable($callback) and $callback($child);
-
-                    $newKeys = [];
-                    foreach ($keys as $key => $fk) {
-                        $n = $child->getConnection()->makeAliasColumn($fk, 'pivot_relation');
-                        $child->select($fk, $n);
-                        $child->groupBy($n);
-                        $newKeys[$key] = trim($n, '`"');
-                    }
-
-                    $model->setAttributes([
-                        "count_{$name}" => $child->count(),
-                    ]);
-
-                    $child->resetState();
-                }
-            }
-            $model->afterFind();
-            return $model;
-        } else {
-            return false;
-        }
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getResults(): ICollection
-    {
-        $maps = [];
-        $counts = [];
-        $relations = [];
-        $this->getModel()->beforeFind();
-        $query = $this->getConnection()->execute($this->getQuery(false), $this->getParams());
-        $results = $query->fetchAll();
-
-        if (count($results) > 0) {
-            foreach ($this->withRelations as $name => $relation) {
-                if ($rel = $this->parseRelations($name, $this->getModel()->relations())) {
-                    [$type, $class, $through, $keys, $use] = $rel;
-                    $model = new $class();
-                    $model->setAlias($name);
-                    $model->select($name . '.*');
-                    if ($through !== null) {
-                        $model->join($through, $keys, 'inner', $this->getModel()->relations());
-                        $keys = $model->throughConditions();
-                    }
-                    $model->where(function ($where) use ($keys, $results, &$maps) {
-                        foreach ($keys as $pk => $fk) {
-                            if (!array_key_exists($pk, $maps)) {
-                                $maps[$pk] = array_map(function ($m) use ($pk) {
-                                    return $m[$pk];
-                                }, $results);
-                            }
-                            $where->add([$fk => $maps[$pk]], IQuery::OPERATOR_IN);
-                        }
-                    });
-                    $newKeys = [];
-                    foreach ($keys as $key => $fk) {
-                        $n = $model->getConnection()->makeAliasColumn($fk, 'pivot_relation');
-                        $model->select($fk, $n);
-                        $newKeys[$key] = trim($n, '`"');
-                    }
-
-                    is_callable($use) and $use($model);
-                    is_callable($relation) and $relation($model);
-
-                    $relations[$name] = [
-                        'maps' => $newKeys,
-                        'type' => $type,
-                        'values' => $model->getResults(),
-                    ];
-                }
-            }
-
-            foreach ($this->withCounts as $name => $relation) {
-                if ($rel = $this->parseRelations($name, $this->getModel()->relations())) {
-                    [$type, $class, $through, $keys, $use] = $rel;
-                    $model = new $class();
-                    $model->select('count(*)', 'count');
-                    if ($through !== null) {
-                        $model->join($through, $keys, 'inner', $this->getModel()->relations());
-                        $keys = $model->throughConditions();
-                    }
-                    $model->where(function ($where) use ($keys, $results, &$maps) {
-                        foreach ($keys as $pk => $fk) {
-                            if (!array_key_exists($pk, $maps)) {
-                                $maps[$pk] = array_map(function ($m) use ($pk) {
-                                    return $m[$pk];
-                                }, $results);
-                            }
-                            $where->add([$fk => $maps[$pk]], IQuery::OPERATOR_IN);
-                        }
-                    });
-
-                    is_callable($use) and $use($model);
-                    is_callable($relation) and $relation($model);
-
-                    $newKeys = [];
-                    foreach ($keys as $key => $fk) {
-                        $n = $model->getConnection()->makeAliasColumn($fk, 'pivot_relation');
-                        $newKeys[$key] = trim($n, '`"');
-                        $model->select($fk, $n);
-                        $model->groupBy($n);
-                    }
-
-                    $query = $model->connection()->execute($model->getQuery(false), $model->getParams());
-                    $resultCounts = [];
-                    while ($c = $query->fetchOne()) {
-                        $k = '';
-                        foreach ($newKeys as $key) {
-                            $k .= $c[$key];
-                        }
-                        $resultCounts[] = [
-                            'value' => $c['count'],
-                            'identifier' => $k,
-                            'keys' => array_keys($keys),
-                        ];
-                    }
-                    $counts[$name] = $resultCounts;
-                }
-            }
-        }
-
-        $finalResults = array_map(function ($result) use ($counts) {
-            foreach ($counts as $name => $c) {
-                foreach ($c as $row) {
-                    $k = '';
-                    foreach ($row['keys'] as $key) {
-                        $k .= $result[$key];
-                    }
-                    if ($row['identifier'] === $k) {
-                        $result['count_' . $name] = $row['value'];
-                    }
-                }
-            }
-            return $result;
-        }, $results);
-
-        return new Collection($this->getModel(), $finalResults, $relations);
-    }
-
-    /**
-     * @param string     $column
-     * @param $default
-     */
-    public function getValue(string $column, $default = null)
-    {
-        $new = clone $this;
-        $new->limit(1, 0);
-        $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
-        $result = $query->fetchOne();
-        return array_key_exists($column, $result) ? $result[$column] : $default;
     }
 
     /**
@@ -491,9 +478,9 @@ class Query extends AbstractQuery
             $model->beforeFind();
 
             if ($type === IModel::HAS_MANY) {
-                $this->getModel()->setAttributes([$name => $model->getResults()]);
+                $this->getModel()->setAttributes([$name => $model->findAll()]);
             } else {
-                $this->getModel()->setAttributes([$name => $model->getResult()]);
+                $this->getModel()->setAttributes([$name => $model->find()]);
             }
 
             $model->afterFind();
@@ -671,7 +658,7 @@ class Query extends AbstractQuery
                 $new->where([$mine => $attributes[$mine]]);
             }
         }
-        $result = $new->getResult();
+        $result = $new->find();
         $model->resetState();
         $model->clearAttributes();
         $model->setAttributes($result->toArray());
@@ -800,6 +787,19 @@ class Query extends AbstractQuery
             }
         }
         $this->selects = $selects;
+    }
+
+    /**
+     * @param string     $column
+     * @param $default
+     */
+    public function value(string $column, $default = null)
+    {
+        $new = clone $this;
+        $new->limit(1, 0);
+        $query = $new->getConnection()->execute($new->getQuery(false), $new->getParams());
+        $result = $query->fetchOne();
+        return array_key_exists($column, $result) ? $result[$column] : $default;
     }
 
     /**

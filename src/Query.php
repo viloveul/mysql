@@ -540,6 +540,16 @@ class Query extends AbstractQuery
      * @param  int           $operator
      * @return mixed
      */
+    public function orHaving($expression, int $operator = IQuery::OPERATOR_EQUAL): IQuery
+    {
+        return $this->having($expression, $operator, IQuery::SEPARATOR_OR);
+    }
+
+    /**
+     * @param  $expression
+     * @param  int           $operator
+     * @return mixed
+     */
     public function orWhere($expression, int $operator = IQuery::OPERATOR_EQUAL): IQuery
     {
         return $this->where($expression, $operator, IQuery::SEPARATOR_OR);

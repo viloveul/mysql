@@ -72,45 +72,67 @@ class Condition extends AbstractCondition
     protected function parse(string $column, $value, int $operator): string
     {
         $column = $this->getQuery()->getConnection()->makeNormalizeColumn($column);
-        $params = $this->getQuery()->makeParams(is_scalar($value) ? [$value] : ((array) $value));
-        switch ($operator) {
-            case IQuery::OPERATOR_RANGE:
-            case IQuery::OPERATOR_BEETWEN:
-                $first = array_shift($params);
-                $last = isset($params[0]) ? $params[0] : $first;
-                if ($operator === IQuery::OPERATOR_RANGE) {
-                    $argument = "({$column} >= {$first} AND {$column} <= $last)";
-                } else {
-                    $argument = "({$column} BEETWEN {$first} AND $last)";
-                }
-                break;
 
-            case IQuery::OPERATOR_LIKE:
-                $argument = "{$column} LIKE {$params[0]}";
-                break;
-            case IQuery::OPERATOR_EQUAL:
-                $argument = "{$column} = {$params[0]}";
-                break;
-            case IQuery::OPERATOR_GT:
-                $argument = "{$column} > {$params[0]}";
-                break;
-            case IQuery::OPERATOR_LT:
-                $argument = "{$column} < {$params[0]}";
-                break;
-            case IQuery::OPERATOR_GTE:
-                $argument = "{$column} >= {$params[0]}";
-                break;
-            case IQuery::OPERATOR_LTE:
-                $argument = "{$column} <= {$params[0]}";
-                break;
+        if ($operator === IQuery::OPERATOR_RAW && is_scalar($value)) {
+            switch ($value) {
+                case IQuery::VALUE_IS_NULL:
+                    $argument = "{$column} IS NULL";
+                    break;
+                case IQuery::VALUE_IS_EMPTY:
+                    $argument = "({$column} IS NULL OR {$column} = '')";
+                    break;
+                case IQuery::VALUE_NOT_NULL:
+                    $argument = "{$column} IS NOT NULL";
+                    break;
+                case IQuery::VALUE_NOT_EMPTY:
+                default:
+                    $argument = "({$column} IS NOT NULL AND {$column} <> '')";
+                    break;
+            }
+        } else {
+            $params = $this->getQuery()->makeParams(is_scalar($value) ? [$value] : ((array) $value));
+            switch ($operator) {
+                case IQuery::OPERATOR_RANGE:
+                case IQuery::OPERATOR_BEETWEN:
+                    $first = array_shift($params);
+                    $last = isset($params[0]) ? $params[0] : $first;
+                    if ($operator === IQuery::OPERATOR_RANGE) {
+                        $argument = "({$column} >= {$first} AND {$column} <= $last)";
+                    } else {
+                        $argument = "({$column} BEETWEN {$first} AND $last)";
+                    }
+                    break;
 
-            case IQuery::OPERATOR_IN:
-            case IQuery::OPERATOR_NOT_IN:
-            default:
-                $op = $operator === IQuery::OPERATOR_NOT_IN ? 'NOT IN' : 'IN';
-                $cond = implode(', ', $params);
-                $argument = "{$column} {$op} ({$cond})";
-                break;
+                case IQuery::OPERATOR_LIKE:
+                    $argument = "{$column} LIKE {$params[0]}";
+                    break;
+                case IQuery::OPERATOR_EQUAL:
+                    $argument = "{$column} = {$params[0]}";
+                    break;
+                case IQuery::OPERATOR_NOT_EQUAL:
+                    $argument = "{$column} <> {$params[0]}";
+                    break;
+                case IQuery::OPERATOR_GT:
+                    $argument = "{$column} > {$params[0]}";
+                    break;
+                case IQuery::OPERATOR_LT:
+                    $argument = "{$column} < {$params[0]}";
+                    break;
+                case IQuery::OPERATOR_GTE:
+                    $argument = "{$column} >= {$params[0]}";
+                    break;
+                case IQuery::OPERATOR_LTE:
+                    $argument = "{$column} <= {$params[0]}";
+                    break;
+
+                case IQuery::OPERATOR_IN:
+                case IQuery::OPERATOR_NOT_IN:
+                default:
+                    $op = $operator === IQuery::OPERATOR_NOT_IN ? 'NOT IN' : 'IN';
+                    $cond = implode(', ', $params);
+                    $argument = "{$column} {$op} ({$cond})";
+                    break;
+            }
         }
         return $argument;
     }

@@ -141,7 +141,7 @@ class Query extends AbstractQuery
                     foreach ($keys as $key => $fk) {
                         $n = $child->getConnection()->makeAliasColumn($fk, 'pivot_relation');
                         $child->select($fk, $n);
-                        $child->groupBy($n);
+                        $child->group($n);
                         $newKeys[$key] = trim($n, '`"');
                     }
 
@@ -238,7 +238,7 @@ class Query extends AbstractQuery
                         $n = $model->getConnection()->makeAliasColumn($fk, 'pivot_relation');
                         $newKeys[$key] = trim($n, '`"');
                         $model->select($fk, $n);
-                        $model->groupBy($n);
+                        $model->group($n);
                     }
 
                     $query = $model->connection()->execute($model->getQuery(false), $model->getParams());
@@ -374,7 +374,7 @@ class Query extends AbstractQuery
      * @param  string  $column
      * @return mixed
      */
-    public function groupBy(string $column): IQuery
+    public function group(string $column): IQuery
     {
         $str = $this->getConnection()->makeNormalizeColumn($column);
         $split = explode('.', $str);
@@ -570,7 +570,7 @@ class Query extends AbstractQuery
      * @param  int     $sort
      * @return mixed
      */
-    public function orderBy(string $column, int $sort = IQuery::SORT_ASC): IQuery
+    public function order(string $column, int $sort = IQuery::SORT_ASC): IQuery
     {
         $this->orders[] = [
             'column' => $this->getConnection()->makeNormalizeColumn($column),

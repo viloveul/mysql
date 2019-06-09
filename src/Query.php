@@ -294,7 +294,11 @@ class Query extends AbstractQuery
     {
         $compiledOrders = [];
         foreach ($this->orders as $order) {
-            $compiledOrders[] = $order['column'] . ' ' . ($order['sort'] === IQuery::SORT_ASC ? 'ASC' : 'DESC');
+            if ($order['column'] === IQuery::RANDOM_ORDER) {
+                $compiledOrders[] = 'RAND()';
+            } else {
+                $compiledOrders[] = $order['column'] . ' ' . ($order['sort'] === IQuery::SORT_ASC ? 'ASC' : 'DESC');
+            }
         }
         return implode(', ', $compiledOrders);
     }
